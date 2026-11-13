@@ -1,6 +1,7 @@
 // Interactive Lacrymaria: the same procedural model as blender/lacrymaria.py,
-// built on the GPU each frame from a tracked centreline, so it can be orbited
-// and played at any speed.
+// built on the GPU each frame from a centreline, so it can be orbited while it
+// hunts and swims. The cell's measurements come from the tracked footage; the
+// behaviour is invented (see "behaviour" below) and loops.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -95,78 +96,171 @@ const ringData = new Float32Array(NR * 3 * 4);
 const ringTex = new THREE.DataTexture(ringData, NR, 3, THREE.RGBAFormat, THREE.FloatType);
 ringTex.minFilter = ringTex.magFilter = THREE.NearestFilter;
 
-// pose at a fractional frame: Catmull-Rom between tracked frames
-const NP = DATA.points, NF = DATA.frames;
-const pose = new Float32Array(NP * 2);
-function cr(p0, p1, p2, p3, t) {
-  return 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t);
+// --------------------------------------------------------------- behaviour
+// Invented, with the footage and the paper as the guide: the animal stays at one
+// spot and throws its neck out again and again in different directions, feeling
+// around (out in about a second, a few quick part-retractions, back in under a
+// second: the timing of the tracked clip), shifting and
+// turning a little as it goes; then it pulls the neck in and swims off, spinning
+// about its axis, to another spot. Everything is a periodic function of time, so
+// the whole thing loops without a seam. Times in seconds of the animal's own time.
+const RAD = Math.PI / 180;
+const smoother = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * x * (x * (x * 6 - 15) + 10); };
+const NECK_REST = 28, NECK_SWIM = 15, S_REF = 30;   // um; S_REF is the point of the body that the path moves
+// where it stops: place, heading on arrival and on leaving (it turns while it hunts),
+// pitch likewise, then the throws of the neck: yaw and pitch from the body's axis in
+// degrees, neck length in um, time spent feeling around in s, hook at the tip in degrees
+const SITES = [
+  { p: [95, -8, 5], yaw: [180, 196], pitch: [6, 2], bouts: [[24, 22, 150, 0.8, 30], [-62, 4, 100, 0.0, -20], [8, 40, 186, 2.1, -45], [70, -20, 88, 0.5, 25]] },
+  { p: [-160, -55, 48], yaw: [205, 325], pitch: [10, -14], bouts: [[-35, -25, 120, 0.6, -30], [22, 14, 150, 1.6, 40], [-80, 30, 95, 0.0, 15], [15, -40, 140, 1.0, -35]] },
+  { p: [125, -128, -45], yaw: [350, 462], pitch: [-12, 16], bouts: [[40, 30, 135, 0.9, 35], [5, 14, 172, 1.9, -30], [85, 45, 110, 0.4, 20]] },
+];
+const BOUTS = [], SEGS = [];
+let PERIOD = 0;
+{
+  const rb = mulberry(99);
+  const dirOf = (yaw, pitch) => [Math.cos(pitch * RAD) * Math.cos(yaw * RAD), Math.cos(pitch * RAD) * Math.sin(yaw * RAD), Math.sin(pitch * RAD)];
+  let t = 0;
+  SITES.forEach((site, k) => {
+    const hunt = { type: 'hunt', site, t0: t };
+    t += 0.6;
+    for (const [yaw, pitch, len, dwell, hook] of site.bouts) {
+      const ext = 0.45 + len / 260, ret = 0.4 + len / 330;
+      BOUTS.push({ a: t, b: t + ext, c: t + ext + dwell, e: t + ext + dwell + ret, yaw: yaw * RAD, pitch: pitch * RAD, hook: hook * RAD, len,
+        dips: Math.round(dwell / 0.75), dip: 0.18 + 0.2 * rb() });
+      t += ext + dwell + ret + 0.45 + 0.6 * rb();
+    }
+    hunt.t1 = t;
+    SEGS.push(hunt);
+    const next = SITES[(k + 1) % SITES.length];
+    const dist = Math.hypot(next.p[0] - site.p[0], next.p[1] - site.p[1], next.p[2] - site.p[2]);
+    const d0 = dirOf(site.yaw[1], site.pitch[1]), d1 = dirOf(next.yaw[0], next.pitch[0]), h = 0.42 * dist;
+    SEGS.push({ type: 'swim', t0: t, t1: t + 1.2 + dist / 105, turns: Math.max(1, Math.round(dist / 130)),
+      P: [site.p, site.p.map((v, i) => v + d0[i] * h), next.p.map((v, i) => v - d1[i] * h), next.p] });
+    t = SEGS[SEGS.length - 1].t1;
+  });
+  PERIOD = t;
 }
-function poseAt(f) {
-  f = Math.min(NF - 1, Math.max(0, f));
-  const i = Math.min(NF - 2, Math.floor(f)), t = f - i;
-  const a = Math.max(0, i - 1) * NP * 2, b = i * NP * 2, c = (i + 1) * NP * 2, d = Math.min(NF - 1, i + 2) * NP * 2;
-  for (let k = 0; k < NP * 2; k++) pose[k] = cr(DATA.P[a + k], DATA.P[b + k], DATA.P[c + k], DATA.P[d + k], t);
-  return cr(DATA.L[Math.max(0, i - 1)], DATA.L[i], DATA.L[i + 1], DATA.L[Math.min(NF - 1, i + 2)], t);
+// smooth noise that repeats exactly every PERIOD: a few sines at whole multiples of the loop
+function loopNoise(seed, hzLo, hzHi) {
+  const r = mulberry(seed), parts = [];
+  for (let i = 0; i < 4; i++) parts.push([2 * Math.PI * Math.max(1, Math.round((hzLo + (hzHi - hzLo) * r()) * PERIOD)) / PERIOD, 6.283 * r(), 0.6 + 0.8 * r()]);
+  return (t) => { let v = 0; for (const q of parts) v += q[2] * Math.sin(q[0] * t + q[1]); return v / 2.2; };
 }
-
-const arc = new Float32Array(NP);
-let cx = new Float32Array(NR), cy = new Float32Array(NR);
-// Depth is invented, not measured: the footage is flat. Each point of the centreline
-// only moves straight up or down, so from above the pose is exactly the tracked one.
-// The body tilts a little; the neck climbs away from it, up to about half its own
-// length at the head, with a slow S-bend on top.
-let cz = new Float32Array(NR);
-function inventDepth(L, tt, ds) {
-  const a1 = 0.6 * Math.sin(1.7 * tt + 0.5) + 0.4 * Math.sin(0.9 * tt + 2.0);
-  const a2 = Math.sin(2.3 * tt + 1.0), a3 = Math.sin(1.3 * tt + 4.0);
-  const Ln = Math.max(0, L - DATA.s_body);
-  const tilt = 0.10 + 0.08 * a3;                        // the body noses upward a little
-  const zb = tilt * (DATA.s_body - 35);
-  for (let i = 0; i < NR; i++) {
-    const s = i * ds;
-    if (s < DATA.s_body) { cz[i] = tilt * (s - 35); continue; }
-    const u = (s - DATA.s_body) / Math.max(Ln, 1e-6);
-    // the neck climbs away from the body, more the longer it is, with a slow S-bend on top
-    cz[i] = zb + Ln * ((0.34 + 0.14 * a1) * Math.pow(u, 1.3) + 0.16 * a2 * Math.sin(2 * Math.PI * u) * u
-      + 0.06 * Math.sin(3 * Math.PI * u + 2.1 * tt) * u);
+const NZ = {
+  yaw: loopNoise(1, 0.08, 0.3), pitch: loopNoise(2, 0.08, 0.3), roll: loopNoise(3, 0.05, 0.2),
+  fwd: loopNoise(4, 0.07, 0.22), side: loopNoise(5, 0.07, 0.22), up: loopNoise(6, 0.07, 0.22),
+  a1: loopNoise(7, 0.2, 0.6), a2: loopNoise(8, 0.4, 1.0), b1: loopNoise(9, 0.2, 0.6), b2: loopNoise(10, 0.4, 1.0),
+  ha: loopNoise(11, 0.15, 0.5), hb: loopNoise(12, 0.15, 0.5),
+};
+// how far out the neck is, 0 to 1, and the throw it belongs to (blended between throws)
+function neckAt(t, out) {
+  const n = BOUTS.length;
+  let j = n - 1;
+  for (let i = 0; i < n; i++) if (BOUTS[i].a <= t) j = i;
+  const q = BOUTS[j], nx = BOUTS[(j + 1) % n];
+  const tt = t < q.a ? t + PERIOD : t;                          // before the first throw: still after the last one
+  let env = 0;
+  if (tt < q.b) env = smoother((tt - q.a) / (q.b - q.a));
+  else if (tt < q.c) env = 1 - (q.dips ? q.dip * (0.5 - 0.5 * Math.cos((2 * Math.PI * q.dips * (tt - q.b)) / (q.c - q.b))) : 0);
+  else if (tt < q.e) env = 1 - smoother((tt - q.c) / (q.e - q.c));
+  const x0 = 0.5 * (q.c + q.e), x1 = nx.a + (nx.a < q.a ? PERIOD : 0);
+  const m = smoother((tt - x0) / (x1 - x0));
+  out.env = env;
+  out.len = q.len;
+  out.yaw = q.yaw + (nx.yaw - q.yaw) * m; out.pitch = q.pitch + (nx.pitch - q.pitch) * m; out.hook = q.hook + (nx.hook - q.hook) * m;
+}
+const B = { C: [0, 0, 0], e1: [1, 0, 0], e2: [0, 1, 0], e3: [0, 0, 1], roll: 0, Ln: NECK_REST, env: 0, yaw: 0, pitch: 0, hook: 0, len: 0, swim: 0 };
+const nk = {};
+function behave(t) {
+  t = ((t % PERIOD) + PERIOD) % PERIOD;
+  let seg = SEGS[SEGS.length - 1], turnsDone = 0;
+  for (const g of SEGS) { if (t >= g.t0 && t < g.t1) { seg = g; break; } if (g.type === 'swim') turnsDone += g.turns; }
+  const u = (t - seg.t0) / (seg.t1 - seg.t0);
+  let d, C, swim = 0, roll = 2 * Math.PI * turnsDone + 0.35 * NZ.roll(t);
+  if (seg.type === 'hunt') {
+    const w = smoother(u / 0.12) * smoother((1 - u) / 0.12), k = smoother(u), st = seg.site;
+    const yaw = (st.yaw[0] + (st.yaw[1] - st.yaw[0]) * k + 9 * w * NZ.yaw(t)) * RAD, pitch = (st.pitch[0] + (st.pitch[1] - st.pitch[0]) * k + 6 * w * NZ.pitch(t)) * RAD;
+    d = [Math.cos(pitch) * Math.cos(yaw), Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch)];
+    C = [st.p[0], st.p[1], st.p[2]];
+    B.creep = w;
+  } else {
+    const q = smoother(u), r = 1 - q, P = seg.P;
+    C = [0, 0, 0]; d = [0, 0, 0];
+    for (let i = 0; i < 3; i++) {
+      C[i] = r * r * r * P[0][i] + 3 * r * r * q * P[1][i] + 3 * r * q * q * P[2][i] + q * q * q * P[3][i];
+      d[i] = r * r * (P[1][i] - P[0][i]) + 2 * r * q * (P[2][i] - P[1][i]) + q * q * (P[3][i] - P[2][i]);
+    }
+    const dl = Math.hypot(d[0], d[1], d[2]); d = d.map((v) => v / dl);
+    swim = smoother(u / 0.15) * smoother((1 - u) / 0.15);
+    roll += 2 * Math.PI * seg.turns * (u - Math.sin(2 * Math.PI * u) / (2 * Math.PI));   // spins up and down again
+    B.creep = 0;
   }
-  return smoothArr(cz, 3 / ds);
+  const hl = Math.hypot(d[0], d[1]);
+  const e2 = [-d[1] / hl, d[0] / hl, 0], e3 = [-d[2] * e2[1], d[2] * e2[0], d[0] * e2[1] - d[1] * e2[0]];
+  const c = B.creep, f = 13 * c * NZ.fwd(t), sd = 6 * c * NZ.side(t), up = 4 * c * NZ.up(t);
+  const hx = 3.2 * swim * Math.cos(roll), hy = 3.2 * swim * Math.sin(roll);     // it swims along a narrow helix
+  for (let i = 0; i < 3; i++) C[i] += d[i] * f + e2[i] * (sd + hx) + e3[i] * (hy) + (i === 2 ? up : 0);
+  neckAt(t, nk);
+  const rest = NECK_REST + (NECK_SWIM - NECK_REST) * swim;
+  B.Ln = rest + (nk.len - rest) * nk.env;
+  B.C = C; B.e1 = d; B.e2 = e2; B.e3 = e3; B.roll = roll; B.swim = swim;
+  B.env = nk.env; B.yaw = nk.yaw; B.pitch = nk.pitch; B.hook = nk.hook;
+  return B;
 }
 
-function updateRings(L, tt) {
+let cx = new Float32Array(NR), cy = new Float32Array(NR), cz = new Float32Array(NR);
+function updateRings(time) {
+  const b = behave(time), L = DATA.s_body + b.Ln;
   const { r, theta, ds } = profiles(L, NR);
-  arc[0] = 0;
-  for (let k = 1; k < NP; k++) arc[k] = arc[k - 1] + Math.hypot(pose[2 * k] - pose[2 * k - 2], pose[2 * k + 1] - pose[2 * k - 1]);
-  let j = 0;
+  // The centreline, shaped as in the tracked clip: the neck is a smooth curve with no
+  // waves in it. It turns where it leaves the body and is nearly straight beyond that,
+  // so it goes out along a line and comes back along itself; the long neck only sways
+  // as a gentle arc. Drawn in, it is livelier: it swings about and its tip curls over.
+  const s0 = 0.8 * DATA.s_body, out = b.env, slack = 1 - out;
+  const yaw = b.yaw + 0.16 * out * NZ.a1(time) + 0.30 * slack * NZ.a2(time), pitch = b.pitch + 0.13 * out * NZ.b1(time) + 0.24 * slack * NZ.b2(time);
+  const arcA = 0.0035 * NZ.ha(time), arcB = 0.0028 * NZ.hb(time), hook = b.hook * (0.2 + 0.8 * slack);
+  let x = 0, y = 0, z = 0, ref = 0;
   for (let i = 0; i < NR; i++) {
-    const q = (i / (NR - 1)) * arc[NP - 1];
-    while (j < NP - 2 && arc[j + 1] < q) j++;
-    const t = (q - arc[j]) / Math.max(arc[j + 1] - arc[j], 1e-6);
-    cx[i] = pose[2 * j] * (1 - t) + pose[2 * j + 2] * t;
-    cy[i] = pose[2 * j + 1] * (1 - t) + pose[2 * j + 3] * t;
+    const s = i * ds, sn = Math.max(0, s - s0), turn = 1 - Math.exp(-sn / 16), tip = Math.exp(-(L - s) / 14) * sstep(sn / 12);
+    const al = yaw * turn + arcA * sn + hook * tip;
+    const be = pitch * turn + arcB * sn;
+    const c1 = Math.cos(be) * Math.cos(al), c2 = Math.cos(be) * Math.sin(al), c3 = Math.sin(be);
+    if (i > 0) {
+      x += (b.e1[0] * c1 + b.e2[0] * c2 + b.e3[0] * c3) * ds; y += (b.e1[1] * c1 + b.e2[1] * c2 + b.e3[1] * c3) * ds; z += (b.e1[2] * c1 + b.e2[2] * c2 + b.e3[2] * c3) * ds;
+    }
+    cx[i] = x; cy[i] = y; cz[i] = z;
+    if (s <= S_REF) ref = i;
   }
-  const sx = smoothArr(cx, 1.5 / ds), sy = smoothArr(cy, 1.5 / ds), sz = inventDepth(L, tt, ds);
+  const ox = b.C[0] - cx[ref], oy = b.C[1] - cy[ref], oz = b.C[2] - cz[ref];
+  const sx = smoothArr(cx, 1.5 / ds), sy = smoothArr(cy, 1.5 / ds), sz = smoothArr(cz, 1.5 / ds);
+  // the frame is carried along the cell without twisting, starting from the body's roll
+  const cr = Math.cos(b.roll), sr = Math.sin(b.roll);
+  let nx = cr * b.e2[0] + sr * b.e3[0], ny = cr * b.e2[1] + sr * b.e3[1], nz = cr * b.e2[2] + sr * b.e3[2];
   let psi = 0;
   for (let i = 0; i < NR; i++) {
-    const a = Math.max(0, i - 1), b = Math.min(NR - 1, i + 1);
-    let tx = sx[b] - sx[a], ty = sy[b] - sy[a], tz = sz[b] - sz[a];
+    const a = Math.max(0, i - 1), c = Math.min(NR - 1, i + 1);
+    let tx = sx[c] - sx[a], ty = sy[c] - sy[a], tz = sz[c] - sz[a];
     const tl = Math.hypot(tx, ty, tz) || 1;
     tx /= tl; ty /= tl; tz /= tl;
-    const hl = Math.hypot(tx, ty) || 1;                // level normal: z cross T
-    const nx = -ty / hl, ny = tx / hl;
+    const dn = nx * tx + ny * ty + nz * tz;
+    nx -= dn * tx; ny -= dn * ty; nz -= dn * tz;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl; ny /= nl; nz /= nl;
     const rs = Math.max(r[i], 0.4 * DATA.r_neck + 0.05);
     psi -= (Math.tan(theta[i]) / rs) * ds;
     const perp = (2 * Math.PI * rs * Math.cos(theta[i])) / N_PLEATS;
     const ne = L - HEAD_LEN * HS;
     const depth = Math.min(0.34 * perp, 1.1) * sstep(r[i] / (0.5 * DATA.r_neck)) * (1 - 0.6 * sstep((i * ds - ne) / (4 * HS)));
     let o = i * 4;
-    ringData[o] = sx[i]; ringData[o + 1] = sy[i]; ringData[o + 2] = sz[i]; ringData[o + 3] = r[i];
+    ringData[o] = sx[i] + ox; ringData[o + 1] = sy[i] + oy; ringData[o + 2] = sz[i] + oz; ringData[o + 3] = r[i];
     o = (NR + i) * 4;
-    ringData[o] = nx; ringData[o + 1] = ny; ringData[o + 2] = 0; ringData[o + 3] = psi;
+    ringData[o] = nx; ringData[o + 1] = ny; ringData[o + 2] = nz; ringData[o + 3] = psi;
     o = (2 * NR + i) * 4;
     ringData[o] = tx; ringData[o + 1] = ty; ringData[o + 2] = tz; ringData[o + 3] = depth;
   }
   ringTex.needsUpdate = true;
+  return L;
 }
 
 // ------------------------------------------------------------------ shaders
@@ -246,10 +340,12 @@ function makePellicle() {
         vec3 cr = cross(dFdx(vView), dFdy(vView));
         float facing = dot(cr, cr) > 0.0 ? abs(dot(normalize(cr), normalize(-vView))) : 1.0;
         float e = pow(clamp(1.0 - facing, 0.0, 1.0), 1.6);
-        vec3 edge = ramp4(e, 0.45, 0.82, vec3(0.004, 0.022, 0.034), vec3(0.03, 0.20, 0.27), vec3(0.30, 0.75, 0.80));
-        vec3 band = ramp4(vGroove, 0.5, 0.88, vec3(0.0), vec3(0.015, 0.13, 0.15), vec3(0.05, 0.36, 0.34));
+        vec3 edge = ramp4(e, 0.45, 0.82, vec3(0.008, 0.018, 0.024), vec3(0.07, 0.15, 0.18), vec3(0.46, 0.62, 0.68));
+        vec3 band = ramp4(vGroove, 0.5, 0.88, vec3(0.0), vec3(0.035, 0.085, 0.10), vec3(0.13, 0.25, 0.27));
         float back = vFront > 0.0 ? 1.0 : 0.30;
-        frag = vec4((edge + band) * back * 0.8, 1.0);
+        // pale and grey-blue, as a ciliate looks in darkfield next to the debris: a thin
+        // bright outline, fine striations, and a faint haze for the body itself
+        frag = vec4((edge + band + vec3(0.010, 0.015, 0.018)) * back * 0.75, 1.0);
       }`,
   });
   const mesh = new THREE.Mesh(g, m);
@@ -341,8 +437,8 @@ function makeCilia() {
       in float vU; in float vGain; out vec4 frag;
       uniform float uGain;
       void main() {
-        vec3 c = vU < 0.7 ? mix(vec3(0.015, 0.09, 0.11), vec3(0.05, 0.17, 0.19), vU / 0.7)
-                          : mix(vec3(0.05, 0.17, 0.19), vec3(0.16, 0.34, 0.34), (vU - 0.7) / 0.3);
+        vec3 c = vU < 0.7 ? mix(vec3(0.03, 0.075, 0.09), vec3(0.075, 0.14, 0.16), vU / 0.7)
+                          : mix(vec3(0.075, 0.14, 0.16), vec3(0.20, 0.29, 0.31), (vU - 0.7) / 0.3);
         frag = vec4(c * uGain * vGain, 1.0);
       }`,
   });
@@ -535,6 +631,7 @@ function makeSurroundings() {
   const clear = (x, y, m) => x < x0 - m || x > x1 + m || y < y0 - m || y > y1 + m;
 
   const fringe = [], body = [], core = [], glint = [], cells = [], needles = [];   // puffs: x y z radius r g b a
+  const flocs = [];
   const flocAt = (cx, cy, cz, R, hue) => {
     const lobes = [{ p: [0, 0, 0], r: R * eu(0.5, 0.62) }];
     const nl = 2 + Math.floor(env() * 4);
@@ -543,6 +640,7 @@ function makeSurroundings() {
       const d = (from.r + r) * eu(0.55, 0.9);
       lobes.push({ p: [from.p[0] + Math.cos(a) * d, from.p[1] + Math.sin(a) * d, from.p[2] + eu(-0.3, 0.3) * d], r });
     }
+    lobes.forEach((l) => flocs.push([cx + l.p[0], cy + l.p[1], cz + l.p[2], l.r]));
     const ox = eu(0, 100), oy = eu(0, 100), oz = eu(0, 100), sc = R / 100;
     const want = Math.floor(5200 * Math.max(0.6, sc * sc));
     for (let i = 0; i < want; i++) {
@@ -666,6 +764,7 @@ function makeSurroundings() {
     });
     const mesh = new THREE.Mesh(g, m);
     mesh.frustumCulled = false;
+    mesh.userData.path = [start, [x, y, z], radius];
     tubes.push(mesh);
   };
   tube([x1 + 40, y0 - 330, -34], 0.92, 820, 7.0, 0.030, 0.00035);     // the long one that passes beside the animal
@@ -739,6 +838,7 @@ function makeSurroundings() {
     .forEach((o, i) => { o.renderOrder = -10 + i; grp.add(o); });
   tubes.forEach((o) => { o.renderOrder = -4; grp.add(o); });
   grp.userData.tubes = tubes;
+  grp.userData.flocs = flocs;                         // each lobe: x y z radius
   grp.userData.count = { fringe: fringe.length, body: body.length, core: core.length, glint: glint.length };
   return grp;
 }
@@ -753,21 +853,24 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0.0018, 0.0065, 0.0125);
 const camera = new THREE.PerspectiveCamera(32, 1, 2, 6000);
 camera.up.set(0, 0, 1);
-camera.position.set(-20, -235, 200);
+camera.position.set(-15, -365, 290);               // takes in all the places the animal visits
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.minDistance = 25;
 controls.maxDistance = 1800;
-controls.target.set(0, 0, 0);
+controls.target.set(15, -60, 0);
 
 const { pts: beads, food } = makeBeads();
-scene.add(beads);
+// the animal is in a scene of its own, drawn after the bloom, so that it does not glow
+// (nothing in the surroundings writes depth or is drawn after it, so the order is safe)
+const animal = new THREE.Scene();
+animal.add(beads);
 const pellicle = makePellicle();
 const cilia = makeCilia();
 const surroundings = makeSurroundings();
-scene.add(surroundings);
-scene.add(pellicle, cilia, makeExtrusomes(), makeMotes());
+scene.add(surroundings, makeMotes());
+animal.add(pellicle, cilia, makeExtrusomes());
 const st = Math.max(1, Math.min(1, (KS / SIZE) * 1.3));
 [
   { s: 80 * KS, rho: 0.18, phi: 0.6, r: 7.2 * SIZE, stretch: Math.max(1, 1.45 * Math.min(1, (KS / SIZE) * 1.3)), edge: [0.90, 0.22, 0.62], core: [0.06, 0.005, 0.045], strength: 0.42 },
@@ -776,13 +879,16 @@ const st = Math.max(1, Math.min(1, (KS / SIZE) * 1.3));
   { s: 27 * KS, rho: 0.15, phi: 1.0, r: 5.0 * SIZE, edge: [0.55, 0.85, 1.0], core: [0, 0.003, 0.006], strength: 0.7, pow: 3.0 },
   { s: 128 * KS, rho: 0.2, phi: 4.0, r: 3.2 * SIZE, edge: [0.55, 0.85, 1.0], core: [0, 0.003, 0.006], strength: 0.7, pow: 3.0 },
   ...food.map((f) => ({ ...f, edge: [0.60, 0.85, 0.25], core: [0.006, 0.016, 0.003], strength: 0.24, pow: 2.4 })),
-].forEach((o) => scene.add(makeShell(o)));
+].forEach((o) => animal.add(makeShell(o)));
 
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.26, 0.22, 0.15);
 bloom.compositeMaterial.uniforms.bloomFactors.value = [1.0, 0.8, 0.5, 0.15, 0.04];
 composer.addPass(bloom);
+const animalPass = new RenderPass(animal, camera);
+animalPass.clear = false;
+composer.addPass(animalPass);
 composer.addPass(new OutputPass());
 composer.addPass(new ShaderPass({
   uniforms: { tDiffuse: { value: null } },
@@ -807,53 +913,45 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// ---------------------------------------------------------------- playback
-const ui = {
-  play: document.getElementById('play'), seek: document.getElementById('seek'),
-  speed: document.getElementById('speed'), speedLabel: document.getElementById('speedLabel'),
-  info: document.getElementById('info'), fps: document.getElementById('fps'),
-};
-const SPEEDS = [1 / 32, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2];
-const state = { frame: 0, playing: true, speed: 1 / 4, hold: 0, clock: 0 };
-ui.seek.max = NF - 1;
-ui.speed.max = SPEEDS.length - 1;
-ui.speed.value = SPEEDS.indexOf(state.speed);
-const speedText = (v) => (v >= 1 ? v + '×' : '1/' + Math.round(1 / v) + '×');
-const setPlay = (p) => { state.playing = p; ui.play.textContent = p ? '❚❚' : '▶'; };
-ui.play.onclick = () => setPlay(!state.playing);
-ui.seek.oninput = () => { state.frame = +ui.seek.value; setPlay(false); };
-ui.speed.oninput = () => { state.speed = SPEEDS[+ui.speed.value]; ui.speedLabel.textContent = speedText(state.speed); };
-ui.speedLabel.textContent = speedText(state.speed);
+// ---------------------------------------------------------------- the loop
+// The behaviour just runs, slowed down, and repeats. The only control is the speed
+// slider: all the way left pauses. Space pauses and resumes too; f shows the frame
+// rate. The view stays where it is put, so the animal is seen to travel.
+const fpsEl = document.getElementById('fps'), speedEl = document.getElementById('speed'), speedLabel = document.getElementById('speedLabel');
+const SPEEDS = [0, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2];   // the first is the pause
+const state = { t: 0, speed: 1 / 4, clock: 0 };
+let resumeAt = SPEEDS.indexOf(state.speed);          // where space goes back to
+speedEl.max = SPEEDS.length - 1;
+function setSpeed(i) {
+  i = Math.min(SPEEDS.length - 1, Math.max(0, i));
+  if (i > 0) resumeAt = i;
+  state.speed = SPEEDS[i];
+  speedEl.value = i;
+  speedLabel.textContent = i === 0 ? 'paused' : state.speed >= 1 ? state.speed + '×' : '1/' + Math.round(1 / state.speed) + '×';
+}
+const setPlay = (p) => setSpeed(p ? resumeAt : 0);
+speedEl.oninput = () => setSpeed(+speedEl.value);
+setSpeed(resumeAt);
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space') { setPlay(!state.playing); e.preventDefault(); }
-  if (e.key === 'f') ui.fps.hidden = !ui.fps.hidden;
+  if (e.code === 'Space') { setPlay(state.speed === 0); e.preventDefault(); }
+  if (e.key === 'f') fpsEl.hidden = !fpsEl.hidden;
 });
 
 let last = performance.now(), fpsAcc = 0, fpsN = 0, slow = 0;
-const stats = { fps: 0, cilia: cilia.userData.count, triangles: 0 };
+const stats = { fps: 0, cilia: cilia.userData.count, triangles: 0, period: PERIOD };
 function tick(now) {
   const raw = (now - last) / 1000;
   const dt = Math.min(0.1, raw);
   last = now;
   if (raw > 0.5) { fpsAcc = 0; fpsN = 0; slow = 0; }   // tab was hidden: not a slow device
-  if (state.playing) {
-    if (state.hold > 0) { state.hold -= dt; if (state.hold <= 0) state.frame = 0; }
-    else {
-      state.frame += dt * DATA.fps * state.speed;
-      if (state.frame >= NF - 1) { state.frame = NF - 1; state.hold = 0.5; }
-    }
-    state.clock += dt * state.speed;                  // the cilia keep beating through the loop
-    ui.seek.value = state.frame;
-  }
-  const L = poseAt(state.frame);
-  updateRings(L, state.frame / DATA.fps);
-  common.uL.value = L;
+  state.t = (state.t + dt * state.speed) % PERIOD;
+  state.clock += dt * state.speed;                    // the cilia keep beating through the loop
+  common.uL.value = updateRings(state.t);
   common.uTime.value = state.clock;
   controls.update();
   composer.render();
-  ui.info.textContent = `${(state.frame / DATA.fps).toFixed(2)} s · ${Math.round(L)} µm long`;
   fpsAcc += dt; fpsN++;
-  if (fpsAcc > 0.5) { stats.fps = fpsN / fpsAcc; stats.triangles = renderer.info.render.triangles; ui.fps.textContent = stats.fps.toFixed(0) + ' fps';
+  if (fpsAcc > 0.5) { stats.fps = fpsN / fpsAcc; stats.triangles = renderer.info.render.triangles; fpsEl.textContent = stats.fps.toFixed(0) + ' fps';
     slow = stats.fps < 38 ? slow + 1 : 0;
     if (slow >= 4 && quality > 0.55) { quality *= 0.8; slow = 0; resize(); composer.render(); }   // redraw: a resized canvas may be cleared
     stats.quality = quality; fpsAcc = 0; fpsN = 0; }
@@ -862,4 +960,4 @@ function tick(now) {
 requestAnimationFrame(tick);
 const dbg = renderer.getContext().getExtension('WEBGL_debug_renderer_info');
 stats.gpu = dbg ? renderer.getContext().getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '';
-window.viewer = { state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings };
+window.viewer = { state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };

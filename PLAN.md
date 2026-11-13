@@ -238,10 +238,51 @@ the next.
   **Felipe's verdicts, 2026-11-13:** debris "look amazing now", thick
   filaments "looks good", thin filaments ok, and the stronger depth "is good
   now" (the first, weaker version he called still flat).
-  To do: his `goals.txt` (flickering is crossed off there, see step 7): a
-  less glowy organism, longer behaviour including the animal moving (needs
-  the tracker made robust beyond the 3.4 s stretch, see step 4), behaviour
-  that loops, more complex organelles, other organisms (paramecium, algae
+  **Less glowy organism (2026-11-13; Felipe saw it and moved on to the
+  behaviour without objecting, no explicit verdict):** he found
+  the animal too contrasting with the debris and wanted no glow if the
+  detail survives. Two changes. The animal is now in its own scene
+  (`animal`), drawn by a second render pass after the bloom, so it gets no
+  halo at all; this is safe because nothing in the surroundings writes depth
+  or is drawn after it. And the pellicle and cilia went from saturated cyan
+  to a pale grey-blue with a faint haze for the body, after the ciliate in
+  `references/debris/darkfield_0014.jpg`, which is the same pale family as
+  the debris fringe. Organelles unchanged. All the detail is still there.
+  **Long looping behaviour (2026-11-13; after the second version Felipe
+  only asked for the speed slider back, no explicit verdict on the motion):** at his suggestion the footage is now only the inspiration, so
+  the tracker did not need extending. The behaviour is invented and written
+  as periodic functions of time ("behaviour" in `web/src/main.js`), so it
+  loops with no seam (checked: the pose at the end matches the start to
+  0.0003 um). The animal stops at three places (`SITES`); at each it throws
+  its neck out three or four times in hand-picked directions in 3D (out in
+  about a second, a few quick part-retractions, back in under a second, the
+  timing of the tracked clip; neck up to 186 um), creeping and turning a
+  little meanwhile; then it pulls the neck in and swims along a curve to the
+  next place, spinning about its axis. One loop is 50 s of its own time,
+  shown at 0.3x, so about 165 s. The frame along the cell is carried without
+  twist, so the neck can point anywhere. The play bar is gone: space pauses,
+  f shows the frame rate. A speed slider is back (2026-11-13, his request): 1/16x to 2x, default 1/4x, and all the way left pauses.
+  **Felipe rejected the first version** for two things. (1) The camera
+  followed the animal, so it did not look as if it moved: the camera is now
+  fixed and frames all three places. (2) The neck was "all wobbly with
+  waves" (a buckling wave on retraction, noise along the neck, a flicking
+  head). Plotting the tracked centrelines over time showed what the real
+  neck does: it is a smooth curve that turns where it leaves the body and
+  is nearly straight beyond, it goes out along a line and comes back along
+  itself, it sways only as a gentle arc when long, and it swings about with
+  a curled tip when short. The neck is now built exactly that way. Lesson:
+  look at the tracked data before inventing motion, as with the scenery.
+  `~/microcosm-build/clearance.js`, passed to `web/check.sh`, checks that no
+  part of the animal comes within a floc or near a thick filament, and the
+  loop seam: rerun it after changing `SITES`. `clipA.json` now only supplies
+  the cell's measurements and the box the scenery keeps clear.
+  `web/check.sh` steps use `viewer.state.t` (seconds), not `state.frame`.
+  Not rerun since these changes: the flicker sweep (`flicker.js`). It was
+  written when the animal was in the main scene, so check how it walks the
+  scene before trusting it; the animal is now drawn after the bloom, so a
+  NaN in its shaders can no longer spread over the frame anyway.
+  To do: his `goals.txt` (flickering is crossed off there, see step 7):
+  more complex organelles, other organisms (paramecium, algae
   with walls), removing the play controls, a GitHub project, hosting,
   making sure the Linode is safe once it is public, and sharing. Before anything is published: the repo ignores
   everything taken from the episode or the paper (see Rights), and the
@@ -302,7 +343,8 @@ and there is lots of insect footage. Trade-offs:
 ## Layout
 
 - `web/`: the viewer. `src/main.js` (all of it), `template.html`,
-  `build.mjs`, `check.sh`, `clipA.json` (the tracked motion), and the built
+  `build.mjs`, `check.sh`, `clipA.json` (the tracked clip: now used only
+  for the cell's measurements and the box the scenery keeps clear), and the built
   `microcosm.html`. Packages are in `~/microcosm-build` on the Linode.
 - `blender/`: `lacrymaria.py` (the reference model), `animate.py`, the
   `run.sh` and `animate.sh` wrappers, a saved `.blend` (not in git).
