@@ -13,7 +13,6 @@ import DATA from '../clipA.json';
 import { makeDesmodesmus } from './desmodesmus.js';
 import { makeParamecia } from './paramecium.js';
 import { INFO } from './info.js';
-import { LensPass, fitLens } from './lens.js';
 
 const N_PLEATS = 15;
 const NR = 720;            // rings along the cell
@@ -1216,25 +1215,13 @@ const para = makeParamecia(common, PERIOD);
 animal.add(...para.cells);
 
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
-const scenePass = new RenderPass(scene, camera);
-composer.addPass(scenePass);
-// the microscope's shallow focus (see lens.js): when it is on, the plain passes draw only
-// what is sharp and these two add the blurred rest. The plane in focus goes through the
-// pivot of the view.
-const lens = { on: false, cone: 0, full: 0.045, focus: 1 };   // cone: a thing d out of the plane in focus blurs to a disc of radius cone * d
-const uLens = { value: new THREE.Vector3(0, 1, 0) };
-fitLens(scene, uLens); fitLens(animal, uLens);
-const sceneLens = new LensPass(scene, camera, uLens);
-composer.addPass(sceneLens);
+composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.26, 0.22, 0.15);
 bloom.compositeMaterial.uniforms.bloomFactors.value = [1.0, 0.8, 0.5, 0.15, 0.04];
 composer.addPass(bloom);
 const animalPass = new RenderPass(animal, camera);
 animalPass.clear = false;
 composer.addPass(animalPass);
-const animalLens = new LensPass(animal, camera, uLens);
-composer.addPass(animalLens);
-sceneLens.enabled = animalLens.enabled = false;
 composer.addPass(new OutputPass());
 composer.addPass(new ShaderPass({
   uniforms: { tDiffuse: { value: null } },
@@ -1261,47 +1248,24 @@ resize();
 
 // ---------------------------------------------------------------- the loop
 // The behaviour just runs, slowed down, and repeats. The only control is the speed
-// slider: all the way left pauses. Space pauses and resumes too; f shows the frame
+// slider, which runs smoothly from 0 to 2: all the way left pauses. Space pauses and resumes too; f shows the frame
 // rate. The view stays where it is put, so the animal is seen to travel, unless an
 // organism has been clicked: then it goes along with that one.
 const fpsEl = document.getElementById('fps'), speedEl = document.getElementById('speed'), speedLabel = document.getElementById('speedLabel');
-const SPEEDS = [0, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2];   // the first is the pause
 const state = { t: 0, speed: 1 / 4, clock: 0 };
-let resumeAt = SPEEDS.indexOf(state.speed);          // where space goes back to
-speedEl.max = SPEEDS.length - 1;
-function setSpeed(i) {
-  i = Math.min(SPEEDS.length - 1, Math.max(0, i));
-  if (i > 0) resumeAt = i;
-  state.speed = SPEEDS[i];
-  speedEl.value = i;
-  speedLabel.textContent = i === 0 ? 'paused' : state.speed >= 1 ? state.speed + '×' : '1/' + Math.round(1 / state.speed) + '×';
+let resumeAt = state.speed;                          // where space goes back to
+function setSpeed(v) {
+  v = Math.min(+speedEl.max, Math.max(0, v));
+  if (v > 0) resumeAt = v;
+  state.speed = v;
+  speedEl.value = v;
+  speedLabel.textContent = v === 0 ? 'paused' : v.toFixed(2) + '×';
 }
 const setPlay = (p) => setSpeed(p ? resumeAt : 0);
 speedEl.oninput = () => setSpeed(+speedEl.value);
 setSpeed(resumeAt);
-// The button by the slider (or m) turns the microscope's focus on: only what lies in a
-// thin plane through the pivot of the view is sharp. The pivot is wherever the view was
-// dragged to, or the organism that was clicked, so a click pulls the focus onto it; the
-// lens keeps its angle, so the blur grows on the screen as the view is zoomed in.
-const scopeEl = document.getElementById('scope');
-function setScope(on) {
-  lens.on = on;
-  scopeEl.classList.toggle('on', on);
-  scopeEl.setAttribute('aria-pressed', on);
-}
-scopeEl.onclick = () => { setScope(!lens.on); scopeEl.blur(); };
-function updateLens(raw) {
-  lens.cone += ((lens.on ? lens.full : 0) - lens.cone) * (1 - Math.exp(-raw / 0.18));   // it opens and closes over a moment
-  const use = lens.on || lens.cone > lens.full * 0.01;
-  if (use !== sceneLens.enabled) {
-    sceneLens.enabled = animalLens.enabled = use;
-  }
-  lens.focus = camera.position.distanceTo(controls.target);
-  uLens.value.set(use ? 1 : 0, lens.focus, lens.cone * lens.focus * camera.projectionMatrix.elements[0] * 0.5 * sceneLens.bands.width);
-}
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') { setPlay(state.speed === 0); e.preventDefault(); }
-  if (e.key === 'm') setScope(!lens.on);
   if (e.key === 'f') fpsEl.hidden = !fpsEl.hidden;
 });
 
@@ -1431,7 +1395,6 @@ function tick(now) {
     controls.target.add(follow.step); camera.position.add(follow.step);
   }
   controls.update();
-  updateLens(raw);
   composer.render();
   fpsAcc += dt; fpsN++;
   if (fpsAcc > 0.5) { stats.fps = fpsN / fpsAcc; stats.triangles = renderer.info.render.triangles; fpsEl.textContent = stats.fps.toFixed(0) + ' fps';
@@ -1473,4 +1436,4 @@ function lookPara(t, k, dist, az = -90, el = 40, along = 0) {
   camera.position.set(c.x + dist * Math.cos(el * RAD) * Math.cos(az * RAD), c.y + dist * Math.cos(el * RAD) * Math.sin(az * RAD), c.z + dist * Math.sin(el * RAD));
   return true;
 }
-window.viewer = { lens, setScope, look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
+window.viewer = { look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
