@@ -11,6 +11,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import DATA from '../clipA.json';
 import { makeDesmodesmus } from './desmodesmus.js';
+import { makeParamecia } from './paramecium.js';
 
 const N_PLEATS = 15;
 const NR = 720;            // rings along the cell
@@ -1205,6 +1206,9 @@ animal.add(detail);
 // the algae drift in the same scene: no glow either
 const desmo = makeDesmodesmus(common, PERIOD);
 animal.add(...desmo.rafts);
+// and two Paramecium graze at the flocs and dart between them
+const para = makeParamecia(common, PERIOD);
+animal.add(...para.cells);
 
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
@@ -1286,6 +1290,15 @@ function pick(x, y) {
     const miss = c.addScaledVector(D, -t).length() - g.userData.radius * 0.7 - Math.max(2, 10 * t * perPx);
     if (miss < best) { best = miss; hit = g.position.clone(); }
   }
+  for (const g of para.cells) {                        // the paramecia: near enough to a rod each
+    const [a, b] = g.userData.ends, R = g.userData.L * 0.11;
+    for (let i = 0; i <= 10; i++) {
+      const c = a.clone().lerp(b, i / 10).sub(O), t = c.dot(D);
+      if (t <= 0) continue;
+      const miss = c.addScaledVector(D, -t).length() - R - Math.max(3, 10 * t * perPx);
+      if (miss < best) { best = miss; hit = O.clone().addScaledVector(D, t); }
+    }
+  }
   if (hit) { focus.to.copy(hit); focus.left = 0.45; }
   return !!hit;
 }
@@ -1310,6 +1323,7 @@ function tick(now) {
   common.uL.value = updateRings(state.t);
   common.uTime.value = state.clock;
   desmo.update(state.t, camera);
+  para.update(state.t, state.clock, camera);
   VACS.forEach((v, i) => {
     const f = vacFill(v, state.clock);
     vacShells[i].material.uniforms.uRad.value = v.r * (0.3 + 0.7 * Math.cbrt(f));
@@ -1352,4 +1366,13 @@ function lookAlga(t, k, dist, az, el) {
   if (az === undefined) camera.up.set(0, 1, 0).applyQuaternion(g.quaternion); else camera.up.set(0, 0, 1);
   return true;
 }
-window.viewer = { look, lookAlga, desmo, pick, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
+// and for paramecium k: along is where on its length to look, -0.5 (back) to 0.5 (front)
+function lookPara(t, k, dist, az = -90, el = 40, along = 0) {
+  setPlay(false); state.t = t;
+  para.update(t, state.clock, camera);
+  const g = para.cells[k], c = g.position.clone().addScaledVector(new THREE.Vector3().setFromMatrixColumn(g.matrix, 0), along * g.userData.L);
+  controls.target.copy(c); camera.up.set(0, 0, 1);
+  camera.position.set(c.x + dist * Math.cos(el * RAD) * Math.cos(az * RAD), c.y + dist * Math.cos(el * RAD) * Math.sin(az * RAD), c.z + dist * Math.sin(el * RAD));
+  return true;
+}
+window.viewer = { look, lookAlga, lookPara, para, desmo, pick, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };

@@ -362,6 +362,76 @@ tumbling about, and picked Desmodesmus (the old "Scenedesmus quadricauda").
   and the animal over the loop, and the seam: rerun after changing `RAFTS`
   or `SITES`. The page title still says only "Lacrymaria olor".
 
+## Third subject: *Paramecium caudatum*
+
+Felipe asked (2026-11-13) for two paramecia with beautiful cilia, modelled like
+the Lacrymaria and moving as in a video. **Built 2026-11-13. He saw the
+first version and asked only for them to be smaller (done, see "Shrunk");
+no verdict yet on the look or the motion, and he had not seen the shrunk
+version when the session ended.**
+
+- **References.** `references/paramecium/brette-2021-eneuro.pdf`: Brette,
+  "Integrative neuroscience of Paramecium, a 'swimming neuron'", *eNeuro* 8(3),
+  2021, open access (CC BY): a large species, about 200 um, pointed at the
+  back; thousands of cilia about 10 um long beating at 10 to 20 Hz, power
+  stroke to the rear and right, in metachronal waves that spiral round the
+  body; about 1 mm/s, turning over to the left about once a second on a spiral
+  wider than the cell, oral groove towards the spiral's axis; the avoiding
+  reaction (back up for a fraction of a second, swing the front round with the
+  back end still, go on). Videos: five clips from Wikimedia Commons, on the
+  laptop in `/mnt/bigdisk/microcosm-footage/paramecium/` (k6, k7, k9, k0 by
+  Alexander Klepnev, CC BY 4.0 or BY-SA; h4 by Jon Houseman). Sheets of them
+  in `references/paramecium/video/`. `k7` (DIC, free in the water) gave the
+  outline; `k6` (grazing along a floc) gave the behaviour.
+  `tracking/paramecium_track.py` tracks the cell by colour with the stage's
+  motion taken out; it only half works (the mask merges with the debris), but
+  the heading over time is clear (`track_k6_plot.png`): the cell keeps its
+  front in the floc and swings about it through some 100 degrees and back
+  every 7 s or so, creeping, with short jerks backwards at 0.7 to 1.5 body
+  lengths a second; in `k7` it noses a crumb for seconds, then is out of frame
+  in under a second.
+- **Model.** `web/src/paramecium.js`, built in the viewer. A rigid body from a
+  hand-drawn width profile with the oral groove pressed into it; about 7,800
+  and 6,300 cilia on 96 rows, 2 um apart, each drawn as a line of 8 pieces
+  with a three-dimensional beat worked out in the vertex shader (straight
+  power stroke, low recovery stroke with a bend running out to the tip),
+  phased as waves 11.5 um long that wind four times round the cell; longer
+  cilia in a tuft at the back; in the groove they beat towards the mouth.
+  Inside: macronucleus and micronucleus, two contractile vacuoles with canals
+  beating in turn, the gullet with its three bands, 11 food vacuoles carried
+  round and digested (one born every 4.5 s, far faster than life), granules
+  and crystals. Close up (`LOD`, as for the Lacrymaria): the lattice of the
+  pellicle, trichocysts, basal bodies, nucleoli, mitochondria, Golgi. The
+  inside is textbook cell biology placed by hand, not from the paper.
+- **Behaviour.** Invented from the above, periodic, so the loop still closes
+  (`plan` in the module). Each cell goes round three grazing stops (`SPECS`):
+  at each, front end in the fringe of a floc, body swinging about it, a jerk
+  back now and then; then back up, turn about the back end, dart to the next
+  at up to 900 um/s on a slight spiral. The cilia speed up and their stroke
+  swings to the front when it backs up. Stops were chosen to lie in the
+  default view and timed around the Lacrymaria. `~/microcosm-build/para.js`,
+  passed to `web/check.sh`, prints each stretch's clearance from flocs, thick
+  filaments, the Lacrymaria, the algae and the other cell (already less a
+  margin; negative only for the floc it is nosing into), and the seam: rerun
+  after changing `SPECS`, `SITES` or `RAFTS`. `~/microcosm-build/proj.mjs`
+  says where a point falls in the default view. `viewer.lookPara(t, k, dist,
+  az, el, along)` frames cell k for `web/check.sh`. A click on one sets the
+  pivot. Cost: not measurable in the test Chromium (47 fps with or without).
+- **Shrunk (2026-11-13, Felipe's request).** He found them too big: he wants
+  the Lacrymaria bigger than the paramecia, and chose "just shrink the
+  paramecia" over rescaling the rest. They are now 85 and 75 um, drawn at
+  `UNIT` = 1/1.7 scene units per um, so 50 and 44 units against the
+  Lacrymaria's body of 59. This reads the scene's unit as 1.7 um: the
+  Lacrymaria becomes a large individual of 100 um and the paramecia small ones
+  (the *P. aurelia* group and *P. bursaria* go down to about 80 um; figure
+  from memory, not checked). The cell is built in real um, so cilia stay 10 um
+  and look longer on the smaller body; about 1,900 and 1,600 cilia on 48 rows
+  now. Not done: the shape is still *P. caudatum*'s (pointed back, one
+  micronucleus), and at this reading the alga's cells would be about 30 um,
+  over the paper's 23. All um figures elsewhere in this file are scene units.
+- **Open.** At the usual 1/4 speed a dart lasts about 4 s and a swing half a
+  minute. The page title still says only "Lacrymaria olor".
+
 ## Later subjects
 
 ### Tardigrade
@@ -416,7 +486,7 @@ and there is lots of insect footage. Trade-offs:
 
 ## Layout
 
-- `web/`: the viewer. `src/main.js` (Lacrymaria, scenery, the loop), `src/desmodesmus.js` (the algae), `template.html`,
+- `web/`: the viewer. `src/main.js` (Lacrymaria, scenery, the loop), `src/desmodesmus.js` (the algae), `src/paramecium.js` (the paramecia), `template.html`,
   `build.mjs`, `check.sh`, `clipA.json` (the tracked clip: now used only
   for the cell's measurements and the box the scenery keeps clear), and the built
   `microcosm.html`. Packages are in `~/microcosm-build` on the Linode.

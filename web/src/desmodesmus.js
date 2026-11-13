@@ -26,7 +26,7 @@ const RAFTS = [
   { p: [30, -235, 120], cells: 2, len: 13, ratio: 2.8, spine: 11, turns: 7, seed: 51 },
 ];
 
-function mulberry(seed) {
+export function mulberry(seed) {
   return () => {
     seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -36,7 +36,7 @@ function mulberry(seed) {
 }
 
 // collects triangles with per-vertex extras, then makes one geometry of them
-class Builder {
+export class Builder {
   constructor(extra) { this.extra = extra; this.pos = []; this.nrm = []; this.idx = []; this.att = {}; for (const k in extra) this.att[k] = []; }
   get n() { return this.pos.length / 3; }
   vert(p, n, vals) { this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); for (const k in this.extra) this.att[k].push(...vals[k]); }
