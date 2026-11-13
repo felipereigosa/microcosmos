@@ -317,6 +317,51 @@ the next.
   everything taken from the episode or the paper (see Rights), and the
   Oscillatoria do not sway or glide yet.
 
+## Second subject: *Desmodesmus communis*
+
+Felipe asked (2026-11-13) for an alga with boxy cell walls, see-through green,
+tumbling about, and picked Desmodesmus (the old "Scenedesmus quadricauda").
+**First version built 2026-11-13, awaiting his verdict.**
+
+- **Reference.** `references/desmodesmus/hegewald-braband-2017-fottea.pdf`:
+  Hegewald and Braband, "A taxonomic revision of Desmodesmus serie
+  Desmodesmus", *Fottea* 17(2): 191 to 208 (2017), open access. Figure pages
+  as images in `pages/`, three light micrographs from Wikimedia Commons in
+  `photos/` (the look was matched to `maximus1.jpg`). What it gives: cells
+  9.6 to 19.3 um long on average (7.6 to 23.1), 2.5 to 3.5 times as long as
+  wide, in flat rows of 2, 4 or 8; four spines of 8 to 15 um, about a cell
+  length or shorter, on the poles of the outer cells, each a bundle of tubes;
+  an outer wall layer with an irregular net, held off the three inner layers
+  by tube-like spacers; rosettes of 4 or 5 tubes about 0.5 um across, through
+  which bristles are pushed out. The paper is about the wall, not the inside:
+  one chloroplast lining the wall with one pyrenoid is the genus description,
+  and the rest of the inside (nucleus, Golgi, mitochondria, vacuoles, starch,
+  oil) is generic green-alga cell biology placed by hand. Not obtained
+  (paywalled): Staehelin and Pickett-Heaps, *J. Phycol.* 11: 163 to 185
+  (1975), the classic ultrastructure paper, which would settle the inside.
+- **Model.** `web/src/desmodesmus.js`, built straight in the viewer (no
+  Blender model, no footage, no tracking: it does not move by itself). Each
+  cell is a superellipsoid (`BOX` sets how boxy), outer cells a little
+  narrower at the poles. Four meshes per raft: wall, chloroplast (the same
+  shell at 0.84, lobed, open along one side), everything else with a surface
+  (spines, rosettes, pyrenoid with starch plates, nucleus, Golgi,
+  mitochondria, vacuoles), and point sprites for starch grains and oil.
+  Close up (`LOD`: all there within 30 um, gone beyond 100) the wall shows
+  its net, the chloroplast its thylakoids as lines, and the small organelles
+  appear. The net is drawn several times too coarse so that it can be seen.
+  Not modelled: the outer layer bridging between cells, the spacers, the
+  bristles.
+- **In the scene.** `RAFTS` lists four (4, 8, 4 and 2 cells), in the
+  `animal` scene, so no glow. The motion is invented and periodic (wander
+  about a spot, turn over about a leaning axis, whole cycles per loop), so
+  the loop still closes. Passive drifting is what the real thing does; no
+  footage was looked at for it. A click on one sets the pivot.
+  `viewer.lookAlga(t, k, dist[, az, el])` frames raft k for `web/check.sh`
+  (face on when az and el are left out). `~/microcosm-build/algae.js`, passed
+  to `web/check.sh`, prints each raft's clearance from flocs, thick filaments
+  and the animal over the loop, and the seam: rerun after changing `RAFTS`
+  or `SITES`. The page title still says only "Lacrymaria olor".
+
 ## Later subjects
 
 ### Tardigrade
@@ -371,7 +416,7 @@ and there is lots of insect footage. Trade-offs:
 
 ## Layout
 
-- `web/`: the viewer. `src/main.js` (all of it), `template.html`,
+- `web/`: the viewer. `src/main.js` (Lacrymaria, scenery, the loop), `src/desmodesmus.js` (the algae), `template.html`,
   `build.mjs`, `check.sh`, `clipA.json` (the tracked clip: now used only
   for the cell's measurements and the box the scenery keeps clear), and the built
   `microcosm.html`. Packages are in `~/microcosm-build` on the Linode.

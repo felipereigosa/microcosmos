@@ -10,6 +10,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import DATA from '../clipA.json';
+import { makeDesmodesmus } from './desmodesmus.js';
 
 const N_PLEATS = 15;
 const NR = 720;            // rings along the cell
@@ -1201,6 +1202,9 @@ const vacShells = VACS.map((v) => makeShell({ ...v, ...VAC }));
 animal.add(...vacShells);
 const detail = makeDetail(food, cilia.userData.roots);
 animal.add(detail);
+// the algae drift in the same scene: no glow either
+const desmo = makeDesmodesmus(common, PERIOD);
+animal.add(...desmo.rafts);
 
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
@@ -1276,6 +1280,12 @@ function pick(x, y) {
     const miss = d - ringData[i * 4 + 3] - Math.max(3, 10 * t * perPx);     // the cilia count, and so do a few pixels around
     if (miss < best) { best = miss; hit = O.clone().addScaledVector(D, t); }
   }
+  for (const g of desmo.rafts) {                       // the algae: near enough to a ball each
+    const c = g.position.clone().sub(O), t = c.dot(D);
+    if (t <= 0) continue;
+    const miss = c.addScaledVector(D, -t).length() - g.userData.radius * 0.7 - Math.max(2, 10 * t * perPx);
+    if (miss < best) { best = miss; hit = g.position.clone(); }
+  }
   if (hit) { focus.to.copy(hit); focus.left = 0.45; }
   return !!hit;
 }
@@ -1299,6 +1309,7 @@ function tick(now) {
   state.clock += dt * state.speed;                    // the cilia keep beating through the loop
   common.uL.value = updateRings(state.t);
   common.uTime.value = state.clock;
+  desmo.update(state.t, camera);
   VACS.forEach((v, i) => {
     const f = vacFill(v, state.clock);
     vacShells[i].material.uniforms.uRad.value = v.r * (0.3 + 0.7 * Math.cbrt(f));
@@ -1329,4 +1340,16 @@ function look(t, dist, az = -90, el = 40, along = 0) {
   camera.position.set(c[0] + dist * Math.cos(el * RAD) * Math.cos(az * RAD), c[1] + dist * Math.cos(el * RAD) * Math.sin(az * RAD), c[2] + dist * Math.sin(el * RAD));
   return true;
 }
-window.viewer = { look, pick, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
+// the same for alga k, seen from its own flat side when az and el are left out
+function lookAlga(t, k, dist, az, el) {
+  setPlay(false); state.t = t;
+  desmo.update(t, camera);
+  const g = desmo.rafts[k], c = g.position;
+  const d = az === undefined ? new THREE.Vector3(0, 0, 1).applyQuaternion(g.quaternion)
+    : new THREE.Vector3(Math.cos(el * RAD) * Math.cos(az * RAD), Math.cos(el * RAD) * Math.sin(az * RAD), Math.sin(el * RAD));
+  controls.target.copy(c);
+  camera.position.copy(c).addScaledVector(d, dist);
+  if (az === undefined) camera.up.set(0, 1, 0).applyQuaternion(g.quaternion); else camera.up.set(0, 0, 1);
+  return true;
+}
+window.viewer = { look, lookAlga, desmo, pick, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
