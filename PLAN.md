@@ -422,6 +422,12 @@ version when the session ended.**
   power stroke, low recovery stroke with a bend running out to the tip),
   phased as waves 11.5 um long that wind four times round the cell; longer
   cilia in a tuft at the back; in the groove they beat towards the mouth.
+  **Changed 2026-11-13 at Felipe's wish:** the pellicle and cilia are golden
+  (`SKIN`), not the Lacrymaria's grey-blue, which made the two look alike
+  (violet was tried first and turned down); and the cilia are drawn at about a
+  third of their length (`FUZZ = 0.32`), "a soft peach fuzz", because at full
+  length the cells "look like hairballs". He knows this bends realism; the
+  info panel says so. Do not restore the true length.
   Inside: macronucleus and micronucleus, two contractile vacuoles with canals
   beating in turn, the gullet with its three bands, 11 food vacuoles carried
   round and digested (one born every 4.5 s, far faster than life), granules
@@ -586,7 +592,7 @@ and there is lots of insect footage. Trade-offs:
 
 ## Layout
 
-- `web/`: the viewer. `src/main.js` (Lacrymaria, scenery, the loop), `src/desmodesmus.js` (the algae), `src/paramecium.js` (the paramecia), `template.html`,
+- `web/`: the viewer. `src/main.js` (Lacrymaria, scenery, the loop), `src/desmodesmus.js` (the algae), `src/paramecium.js` (the paramecia), `src/vorticella.js` (the vorticella), `template.html`,
   `build.mjs`, `check.sh`, `clipA.json` (the tracked clip: now used only
   for the cell's measurements and the box the scenery keeps clear), and the built
   `microcosm.html`. Packages are in `~/microcosm-build` on the Linode.
@@ -599,3 +605,20 @@ and there is lots of insect footage. Trade-offs:
   `footage/`, `renders/`, `tracking/check/` and the overlay video. They are
   still in the folder and on the laptop.
 - `goals.txt`: Felipe's own list. Not in git; never edit it.
+
+## Fourth subject: *Vorticella* (started 2026-11-13, first build, not yet seen by Felipe)
+
+- `web/src/vorticella.js`: one bell on a stalk, anchored on the floc near
+  (141, 15, -144), in the right of the default view. Deep blue at Felipe's wish.
+- Built: bell with rings, disc, three rows of wreath cilia beating in a wave,
+  funnel, C-shaped macronucleus, micronucleus, contractile vacuole, food
+  vacuoles, mitochondria; stalk sheath with the band inside; the stalk snaps
+  into a coil three times per loop (`snaps`) and stretches out over 5 s, the
+  bell closing; an eddy of 340 specks in front of the bell, shown only within
+  about 120 to 280 of the camera and while the bell is open. Clickable, with an
+  info panel entry; `viewer.lookVort(t, dist, az, el, along)` for screenshots.
+- To do: check the sizes against Ryu et al., Micromachines 2017 (written from
+  memory, no paper or reference photos fetched yet); watch the eddy and the
+  snap in motion (only stills were checked); snap when tapped or when the
+  Lacrymaria or a paramecium comes near; the wreath's turn and a quarter into
+  the funnel is drawn as closed rings; more than one, perhaps a cluster.

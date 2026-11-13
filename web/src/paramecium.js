@@ -103,6 +103,15 @@ function shapeOf(L) {
 }
 
 const ADD = { blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, side: THREE.DoubleSide };
+// The pellicle and the cilia are golden, to tell the paramecia from the grey-blue
+// Lacrymaria at a glance (the colours are a choice: the living cells are clear as glass).
+// From dark to bright; the blue ones they replaced are in the git history.
+const V = (r, g, b) => `vec3(${r}, ${g}, ${b})`;
+const SKIN = { dark: V(0.022, 0.016, 0.004), mid: V(0.19, 0.135, 0.038), bright: V(0.82, 0.60, 0.20), haze: V(0.019, 0.014, 0.005),
+  groove: V(0.042, 0.030, 0.009), rows: V(0.145, 0.104, 0.032), cil0: V(0.092, 0.066, 0.020), cil1: V(0.18, 0.128, 0.040), cil2: V(0.37, 0.27, 0.09) };
+// The cilia are drawn well short of their real 10 um or so, at Felipe's wish: a peach
+// fuzz that leaves the shape of the cell to be seen, not a ball of hair.
+const FUZZ = 0.32;
 const RIM = 'float facing = dot(normalize(vN), normalize(-vV)); float f = clamp(1.0 - abs(facing), 0.0, 1.0);';   // clamped: a pow() of a negative gives NaN
 
 function makeCell(spec, common) {
@@ -137,16 +146,16 @@ function makeCell(spec, common) {
       }
       void main() {
         ${RIM}
-        // the same pale grey-blue as the other ciliate: a thin bright outline and a faint haze
-        vec3 col = ramp4(pow(f, 1.6), 0.45, 0.82, vec3(0.008, 0.018, 0.024), vec3(0.07, 0.15, 0.18), vec3(0.46, 0.62, 0.68)) + vec3(0.010, 0.015, 0.018);
-        col += vec3(0.018, 0.034, 0.040) * vUV.z;                                  // the groove, thick with cilia
+        // a thin bright outline and a faint haze
+        vec3 col = ramp4(pow(f, 1.6), 0.45, 0.82, ${SKIN.dark}, ${SKIN.mid}, ${SKIN.bright}) + ${SKIN.haze};
+        col += ${SKIN.groove} * vUV.z;                                  // the groove, thick with cilia
         // the rows of cilia as fine stripes, and close up the lattice of ridges round each
         // cilium; both fade out before they get finer than a pixel
         float s = vUV.y * ${(NK / TAU).toFixed(5)}, a = vUV.x / 2.0 + 0.5 * mod(floor(s), 2.0);
         float ws = fwidth(s), wa = fwidth(vUV.x / 2.0);
         float rows = smoothstep(0.30, 0.48, abs(fract(s) - 0.5)) * (1.0 - smoothstep(0.25, 0.6, ws));
         float bars = smoothstep(0.34, 0.48, abs(fract(a) - 0.5)) * (1.0 - smoothstep(0.25, 0.6, max(ws, wa)));
-        col += vec3(0.060, 0.115, 0.130) * (0.55 * rows + 0.75 * uLod * max(rows, bars)) * (0.3 + 0.7 * abs(facing));
+        col += ${SKIN.rows} * (0.55 * rows + 0.75 * uLod * max(rows, bars)) * (0.3 + 0.7 * abs(facing));
         frag = vec4(col * (facing > 0.0 ? 1.0 : 0.30) * 0.75, 1.0);
       }`,
   }));
@@ -165,9 +174,9 @@ function makeCell(spec, common) {
       if (k % stride) continue;
       const [nn, back] = S.frame(xa, phi), g = S.groove(xa, phi);
       const ph = TAU * (p[0] / 11.5) + 4 * phi + 0.22 * gauss();     // waves 11.5 um long along the cell, four round it
-      if (xa > 0.972) roots.push([p, nn, back, uni(17, 23), ph, 2]);                                   // the tuft at the back
-      else if (g > 0.5) { const to = sub(mouth, p); roots.push([p, nn, unit(add(to, nn, -dot(to, nn))), 11.5 * uni(0.93, 1.08), ph, 1]); }   // in the groove they beat towards the mouth
-      else roots.push([p, nn, back, 10.5 * uni(0.92, 1.08) * (0.8 + 0.2 * sstep(xa / 0.04)), ph, 0]);
+      if (xa > 0.972) roots.push([p, nn, back, FUZZ * uni(17, 23), ph, 2]);                                   // the tuft at the back
+      else if (g > 0.5) { const to = sub(mouth, p); roots.push([p, nn, unit(add(to, nn, -dot(to, nn))), FUZZ * 11.5 * uni(0.93, 1.08), ph, 1]); }   // in the groove they beat towards the mouth
+      else roots.push([p, nn, back, FUZZ * 10.5 * uni(0.92, 1.08) * (0.8 + 0.2 * sstep(xa / 0.04)), ph, 0]);
     }
   }
   const nv = roots.length * SEG * 2, cp = new Float32Array(nv * 3), cn = new Float32Array(nv * 3), cb = new Float32Array(nv * 3), ci = new Float32Array(nv * 4);
@@ -217,8 +226,8 @@ function makeCell(spec, common) {
     fragmentShader: /* glsl */ `
       precision highp float; in float vU; in float vGain; out vec4 frag;
       void main() {
-        vec3 c = vU < 0.7 ? mix(vec3(0.03, 0.075, 0.09), vec3(0.075, 0.14, 0.16), vU / 0.7)
-                          : mix(vec3(0.075, 0.14, 0.16), vec3(0.20, 0.29, 0.31), (vU - 0.7) / 0.3);
+        vec3 c = vU < 0.7 ? mix(${SKIN.cil0}, ${SKIN.cil1}, vU / 0.7)
+                          : mix(${SKIN.cil1}, ${SKIN.cil2}, (vU - 0.7) / 0.3);
         frag = vec4(c * 0.55 * vGain, 1.0);
       }`,
   }));

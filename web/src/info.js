@@ -43,6 +43,26 @@ export const INFO = {
     ],
     model: 'Measurements after Hegewald & Braband, Fottea 2017. The net of the wall is drawn coarser than life so that it can be seen; the inside is generic green alga cell biology.',
   },
+  vorticella: {
+    accent: '#7fa2ff',
+    kind: 'Ciliate · filter feeder',
+    name: 'Vorticella',
+    tag: 'A bell on a spring, fishing from where it stands.',
+    stats: [['few ms', 'to coil its stalk'], ['seconds', 'to stretch out again'], ['1¼ turns', 'of cilia round the rim']],
+    text: [
+      'It lives fixed by a stalk to debris or plants. The wreath of cilia round the rim of the bell beats in waves and sets up a ring-shaped eddy in the water in front of it, which carries bacteria in to the funnel of the mouth.',
+      'At a disturbance the band inside the stalk contracts and the stalk snaps into a coil, among the fastest movements of any living thing for its size, while the bell closes. Then it slowly uncoils and opens again. Drawn small here; in life the bell is 50 to 90 µm long.',
+    ],
+    look: [
+      [BLUE, 'Stalk', 'a clear sheath with the contractile band, the spasmoneme, winding inside'],
+      [PALE, 'Wreath of cilia', 'round the rim only; the body of the bell is bare, ringed with fine lines'],
+      ['#e0d68c', 'Funnel', 'the mouth, leading from the edge of the disc down into the bell'],
+      [PINK, 'Macronucleus', 'a long band bent into a C, with the small micronucleus beside it'],
+      [BLUE, 'Contractile vacuole', 'beside the funnel, pumping water out'],
+      [GREEN, 'Food vacuoles', 'and mitochondria'],
+    ],
+    model: 'Proportions as usually given for Vorticella convallaria (review: Ryu and others, Micromachines 2017). The specks in the eddy are there to show the current; they are not eaten.',
+  },
   paramecium: {
     accent: '#c3cdf5',
     kind: 'Ciliate · grazer',
@@ -54,7 +74,7 @@ export const INFO = {
       'When it bumps into something it backs up for a moment, the cilia striking forward, pivots about its back end and sets off another way. The two here are drawn small; in life this species is 170 to 300 µm long.',
     ],
     look: [
-      [PALE, 'Cilia', 'about 10 µm long, on a lattice in the pellicle, with trichocysts between them'],
+      [PALE, 'Cilia', 'on a lattice in the pellicle, with trichocysts between them; drawn short here, in life about 10 µm long'],
       [PINK, 'Macronucleus', 'the big bean, with the micronucleus pressed against it'],
       [BLUE, 'Contractile vacuoles', 'two stars of canals that pump water out in turn'],
       ['#e0d68c', 'Gullet', 'the funnel at the end of the groove where food vacuoles form'],

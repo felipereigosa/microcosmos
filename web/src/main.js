@@ -12,6 +12,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import DATA from '../clipA.json';
 import { makeDesmodesmus } from './desmodesmus.js';
 import { makeParamecia } from './paramecium.js';
+import { makeVorticella } from './vorticella.js';
 import { INFO } from './info.js';
 
 const N_PLEATS = 15;
@@ -1213,6 +1214,9 @@ animal.add(...desmo.rafts);
 // and two Paramecium graze at the flocs and dart between them
 const para = makeParamecia(common, PERIOD);
 animal.add(...para.cells);
+// a Vorticella stands on a floc, drawing an eddy in to its mouth and snapping back now and then
+const vort = makeVorticella(common, PERIOD, surroundings.userData.flocs);
+animal.add(...vort.cells);
 
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
@@ -1307,6 +1311,12 @@ function hitTest(x, y) {
       if (miss < best) { best = miss; hit = { kind: 'paramecium', k, u: i / 10 }; }
     }
   });
+  vort.cells.forEach((g, k) => g.userData.spots.forEach((sp, i) => {    // the vorticella: its bell, and spots along its stalk
+    const c = sp.p.clone().sub(O), t = c.dot(D);
+    if (t <= 0) return;
+    const miss = c.addScaledVector(D, -t).length() - sp.r - Math.max(2, 8 * t * perPx);
+    if (miss < best) { best = miss; hit = { kind: 'vorticella', k, i }; }
+  }));
   surroundings.userData.tubes.forEach((g) => {         // the green filaments: lying still, so the spot is a fixed one
     const ln = g.userData.line, R = g.userData.path[2];
     for (let i = 0; i < ln.length; i += 3) {
@@ -1323,6 +1333,7 @@ function hitTest(x, y) {
 function anchorOf(hit) {
   if (hit.kind === 'oscillatoria') return (v) => v.set(hit.p[0], hit.p[1], hit.p[2]);
   if (hit.kind === 'desmodesmus') return (v) => v.copy(desmo.rafts[hit.k].position);
+  if (hit.kind === 'vorticella') return (v) => v.copy(vort.cells[hit.k].userData.spots[hit.i].p);
   if (hit.kind === 'paramecium') return (v) => { const [a, b] = para.cells[hit.k].userData.ends; return v.copy(a).lerp(b, hit.u); };
   const L0 = common.uL.value, s0 = (hit.ring / (NR - 1)) * L0, onBody = s0 <= DATA.s_body, keep = onBody ? s0 : L0 - s0;
   return (v) => {
@@ -1384,6 +1395,7 @@ function tick(now) {
   common.uTime.value = state.clock;
   desmo.update(state.t, camera);
   para.update(state.t, state.clock, camera);
+  vort.update(state.t, state.clock, camera);
   VACS.forEach((v, i) => {
     const f = vacFill(v, state.clock);
     vacShells[i].material.uniforms.uRad.value = v.r * (0.3 + 0.7 * Math.cbrt(f));
@@ -1436,4 +1448,13 @@ function lookPara(t, k, dist, az = -90, el = 40, along = 0) {
   camera.position.set(c.x + dist * Math.cos(el * RAD) * Math.cos(az * RAD), c.y + dist * Math.cos(el * RAD) * Math.sin(az * RAD), c.z + dist * Math.sin(el * RAD));
   return true;
 }
-window.viewer = { look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
+// and for the vorticella: its bell from dist away; along moves the spot up the bell's axis
+function lookVort(t, dist, az = -90, el = 40, along = 0) {
+  setPlay(false); select(null); state.t = t;
+  vort.update(t, state.clock, camera);
+  const z = vort.cells[0].userData.zooid, c = new THREE.Vector3(vort.cells[0].userData.H * (0.55 + along), 0, 0).applyMatrix4(z.matrixWorld);
+  controls.target.copy(c); camera.up.set(0, 0, 1);
+  camera.position.set(c.x + dist * Math.cos(el * RAD) * Math.cos(az * RAD), c.y + dist * Math.cos(el * RAD) * Math.sin(az * RAD), c.z + dist * Math.sin(el * RAD));
+  return true;
+}
+window.viewer = { lookVort, vort, look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
