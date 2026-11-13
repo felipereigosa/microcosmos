@@ -1,0 +1,15 @@
+# Other people's material (frames of the episode, the paper): never publish.
+references/
+footage/
+renders/
+tracking/check/
+tracking/*_overlay.mp4
+tracking/*_sheet.jpg
+# Large and regenerable
+blender/*.blend
+blender/*.blend1
+__pycache__/
+# Felipe's scratchpad and editor files
+goals.txt
+\#*\#
+*~
