@@ -221,8 +221,8 @@ the next.
   wall and a grainy inside, drawn as see-through meshes. Built in the viewer, not in Blender: a mesh would give hard
   surfaces again. The final image is dithered (no more banded haze).
   **Felipe's verdicts, 2026-11-13:** debris "look amazing now", thick
-  filaments "looks good", thin filaments ok. The stronger depth has had no
-  verdict yet (the first, weaker version he called still flat).
+  filaments "looks good", thin filaments ok, and the stronger depth "is good
+  now" (the first, weaker version he called still flat).
   To do: his `goals.txt`, which lists flickering (not yet looked at: ask
   him where he sees it), bigger debris, longer behaviour including the
   animal moving (needs the tracker made robust beyond the 3.4 s stretch,
