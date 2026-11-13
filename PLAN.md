@@ -466,7 +466,8 @@ the first two, since they improve what is already in the scene.
 1. The Lacrymaria catches something: a few small, fast ciliates about the
    debris; once per loop the neck strikes one, the head swells round it and
    the lump travels down the neck to become a food vacuole. Look at real
-   footage of a Lacrymaria feeding first.
+   footage of a Lacrymaria feeding first. **Chosen by Felipe, parked:** see
+   "Next: the Lacrymaria eats" below.
 2. Depth of field with the focal plane on the pivot, so a click pulls focus
    to the organism.
 3. Water that moves: the motes swept by the paramecia's cilia and swirled at
@@ -479,6 +480,66 @@ the first two, since they improve what is already in the scene.
    step towards his "turn it into a game?".
 7. Smaller: the Oscillatoria glide and sway, a scale bar that follows the
    zoom, an opening shot falling in from a whole drop, gliding diatoms.
+
+## Microscope focus (built 2026-11-13, awaiting Felipe's verdict)
+
+His goal "toggle microscope focus". A round button by the speed slider (or
+the m key) turns on a shallow depth of field: only a thin plane through the
+pivot of the view is sharp, so clicking an organism pulls the focus onto it,
+and a long one (the Lacrymaria with its neck out) is sharp only in part.
+
+- **How** (`web/src/lens.js`). Nothing in the scene writes depth, so a blur
+  from a depth buffer is not possible. A weight patched into every shader by
+  `fitLens` sorts what it draws by how blurred it is to be: the sharp part is
+  drawn once as before; the rest is drawn once more into five layers (one
+  render with five targets) for blurs of 3 to 48 px, each layer is spread
+  into discs at its own reduced size (mipmaps) and added on top. Nothing
+  changes from frame to frame, so the blur keeps still.
+- **Rejected first version.** Drawing the scene several times a frame from
+  points across a lens and averaging over frames: Felipe saw the blurred
+  things "vibrating like crazy" (the points changed every frame) and found
+  it too strong at 0.1. Do not go back to anything that varies in time.
+- **Numbers.** `lens.full` 0.045: a thing d out of the focal plane blurs to
+  a radius of 0.045 d, at every zoom, so on the screen the blur grows as the
+  view is zoomed in; it stops growing at 48 px. Costs about 5 fps on the
+  test Chromium (Intel UHD, about 39 fps plain that day).
+- **Known limits.** A resolution lowered while the lens was on stays
+  lowered after it is turned off. On a phone the button hides with the
+  slider while the info panel is open. The granules are now drawn as a
+  see-through material that covers fully (same look, needed for the layers).
+- **Open.** His verdict on the strength (`viewer.lens.full`) and on the
+  look in motion, which stills cannot show.
+
+## Next: the Lacrymaria eats (talked through 2026-11-13, not started)
+
+Felipe asked how hard it would be to add a few smallish things for the
+Lacrymaria to eat, realistically. Agreed so far, in talk only; he wants two
+basic features first, then this.
+
+- **Prey.** 4 or 5 small ciliates near the flocs, modelled on Cyclidium
+  (really 15 to 30 um, sits still and now and then jumps). Size is his
+  call: about twice the Lacrymaria's head, because the scene is getting
+  busy. The head is about 11 by 6.5 scene units, so the prey is about 20
+  long by 10 wide, under half a paramecium (drawn at about 50 and 44).
+  Pale, in the family of the debris, so they add no colour. Smaller prey
+  (flagellates of 5 to 10 um) was offered and set aside: the swallow would
+  hardly show. He has not confirmed the species, only the size.
+- **The catch.** One per loop to start. The throws are a scripted table
+  (`SITES`, `BOUTS` in `web/src/main.js`) and the prey's path would be
+  scripted too, so one throw is aimed to meet a prey at the right moment.
+  Real sequence: the head touches, toxicysts paralyse the prey, the mouth
+  stretches far wider than the head, the lump goes down the neck into the
+  body and ends as a food vacuole (those already exist in the close-up
+  detail, `makeDetail`).
+- **The hard parts.** The swallow needs a bulge travelling along the body
+  profile (`profiles`, `updateRings`) that the pleats and cilia follow; its
+  look is the risk, and motion can only be judged by him. The loop: the
+  eaten one must be back by the restart, simplest with a replacement
+  swimming in from outside the frame later in the loop.
+- **Order of work.** Find real feeding footage first and copy the timing
+  and the stretch of the mouth; show him stills of the strike and the
+  swallow early; add an `info.js` entry and hit test for the prey.
+- **Size of the job.** About the same as the paramecia: one session.
 
 ## Later subjects
 

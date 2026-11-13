@@ -9,8 +9,16 @@
     font: 14px/1.3 system-ui, sans-serif; -webkit-user-select: none; user-select: none; }
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
   #fps { position: fixed; left: 18px; top: 14px; opacity: .6; font-variant-numeric: tabular-nums; }
-  #speedBox { position: fixed; left: 18px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; align-items: center;
-    gap: 8px; opacity: .8; }
+  #bar { position: fixed; left: 18px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; align-items: center;
+    gap: 6px; }
+  #speedBox { display: flex; align-items: center; gap: 8px; opacity: .8; }
+  #scope { width: 36px; height: 36px; padding: 6px; border: 1px solid transparent; border-radius: 50%; background: rgba(255, 255, 255, .06);
+    color: #cfe9ee; opacity: .7; cursor: pointer; transition: all .25s ease; }
+  #scope svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round;
+    stroke-linejoin: round; }
+  #scope:hover { opacity: 1; background: rgba(255, 255, 255, .12); }
+  #scope.on { opacity: 1; color: #8fe3ef; background: rgba(88, 185, 198, .2); border-color: rgba(143, 227, 239, .5);
+    box-shadow: 0 0 14px rgba(88, 185, 198, .35); }
   #speed { width: 150px; height: 28px; accent-color: #58b9c6; }
   #speedLabel { width: 4em; font-variant-numeric: tabular-nums; }
   #panel { position: fixed; right: 18px; top: 18px; width: 340px; max-height: calc(100% - 36px); box-sizing: border-box;
@@ -47,14 +55,17 @@
       padding: 18px 18px 14px; }
     #panel.off { transform: translateY(18px); }
     #panel h2 { font-size: 23px; }
-    body.info #speedBox { display: none; }
+    body.info #bar { display: none; }
   }
 </style>
 </head>
 <body>
 <canvas id="view"></canvas>
 <div id="fps" hidden></div>
+<div id="bar">
 <label id="speedBox">Speed <input id="speed" type="range" min="0" max="6" step="1" aria-label="Simulation speed; all the way left pauses"><span id="speedLabel"></span></label>
+<button id="scope" title="Microscope focus (m)" aria-label="Microscope focus: only the plane through the centre of the view is sharp" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M5 21h14"/><path d="M8 17h6"/><path d="M13.5 9.2a6 6 0 0 1 1.5 11.8"/><rect x="8.2" y="2.6" width="4.6" height="9.6" rx="1.4" transform="rotate(-24 10.5 7.4)"/><path d="M11.6 12.4l1 2.2"/></svg></button>
+</div>
 <aside id="panel" class="off" aria-live="polite"><button id="panelClose" aria-label="Close">×</button><div id="panelBody"></div></aside>
 <script>/*BUNDLE*/</script>
 </body>
