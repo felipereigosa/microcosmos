@@ -12,6 +12,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import DATA from '../clipA.json';
 import { makeDesmodesmus } from './desmodesmus.js';
 import { makeParamecia } from './paramecium.js';
+import { INFO } from './info.js';
 
 const N_PLEATS = 15;
 const NR = 720;            // rings along the cell
@@ -1039,7 +1040,9 @@ function makeSurroundings() {
     const NS = 18, step = 1.0, n = Math.floor(len / step) + 1;
     const pos = new Float32Array(n * NS * 3), nor = new Float32Array(n * NS * 3), al = new Float32Array(n * NS * 2), idx = new Uint32Array((n - 1) * NS * 6);
     let x = start[0], y = start[1], z = start[2], h = heading, o = 0;
+    const line = [];                                   // the centreline every 4 um, for clicks
     for (let i = 0; i < n; i++) {
+      if (i % 4 === 0) line.push(x, y, z);
       const d = i * step, end = Math.min(d, len - d);
       const r = radius * Math.sqrt(Math.max(0, 1 - Math.pow(Math.max(0, 1 - end / (radius * 0.9)), 2)));   // rounded ends
       const tx = Math.cos(h), ty = Math.sin(h), nx = -ty, ny = tx;
@@ -1086,6 +1089,7 @@ function makeSurroundings() {
     const mesh = new THREE.Mesh(g, m);
     mesh.frustumCulled = false;
     mesh.userData.path = [start, [x, y, z], radius];
+    mesh.userData.line = line;
     tubes.push(mesh);
   };
   tube([x1 + 40, y0 - 330, -34], 0.92, 820, 7.0, 0.030, 0.00035);     // the long one that passes beside the animal
@@ -1245,7 +1249,8 @@ resize();
 // ---------------------------------------------------------------- the loop
 // The behaviour just runs, slowed down, and repeats. The only control is the speed
 // slider: all the way left pauses. Space pauses and resumes too; f shows the frame
-// rate. The view stays where it is put, so the animal is seen to travel.
+// rate. The view stays where it is put, so the animal is seen to travel, unless an
+// organism has been clicked: then it goes along with that one.
 const fpsEl = document.getElementById('fps'), speedEl = document.getElementById('speed'), speedLabel = document.getElementById('speedLabel');
 const SPEEDS = [0, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2];   // the first is the pause
 const state = { t: 0, speed: 1 / 4, clock: 0 };
@@ -1266,12 +1271,17 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'f') fpsEl.hidden = !fpsEl.hidden;
 });
 
-// A left click on the animal (a click, not a drag) puts the pivot of the view there:
-// the view slides over until that spot is in the middle, and orbiting and zooming
-// then go about it. The pivot stays where it was put; it does not follow the animal.
-// The animal is shaped on the GPU, so the click is tested against its centreline.
-const picker = new THREE.Raycaster(), focus = { left: 0, to: new THREE.Vector3() };
-function pick(x, y) {
+// A left click on an organism (a click, not a drag) selects it: the pivot of the view
+// slides over to the spot that was clicked and then rides along with it, so orbiting
+// and zooming stay about that organism wherever it goes, and a panel tells about it.
+// A click on open water lets go of it (so does Escape); the cross only puts the panel
+// away. The organisms are shaped on the GPU, so the click is tested against the
+// Lacrymaria's centreline, a ball for each alga, a rod for each paramecium and the
+// centreline of each green filament.
+const picker = new THREE.Raycaster();
+// anchor(v): where the followed spot is now. off: what is left of the slide towards it.
+const follow = { anchor: null, off: new THREE.Vector3(), step: new THREE.Vector3() };
+function hitTest(x, y) {
   const rect = canvas.getBoundingClientRect();
   picker.setFromCamera(new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, 1 - ((y - rect.top) / rect.height) * 2), camera);
   const O = picker.ray.origin, D = picker.ray.direction, perPx = (2 * Math.tan((camera.fov * Math.PI) / 360)) / rect.height;
@@ -1282,26 +1292,78 @@ function pick(x, y) {
     if (t <= 0) continue;
     const d = Math.hypot(px - t * D.x, py - t * D.y, pz - t * D.z);
     const miss = d - ringData[i * 4 + 3] - Math.max(3, 10 * t * perPx);     // the cilia count, and so do a few pixels around
-    if (miss < best) { best = miss; hit = O.clone().addScaledVector(D, t); }
+    if (miss < best) { best = miss; hit = { kind: 'lacrymaria', ring: i }; }
   }
-  for (const g of desmo.rafts) {                       // the algae: near enough to a ball each
+  desmo.rafts.forEach((g, k) => {                      // the algae: near enough to a ball each
     const c = g.position.clone().sub(O), t = c.dot(D);
-    if (t <= 0) continue;
+    if (t <= 0) return;
     const miss = c.addScaledVector(D, -t).length() - g.userData.radius * 0.7 - Math.max(2, 10 * t * perPx);
-    if (miss < best) { best = miss; hit = g.position.clone(); }
-  }
-  for (const g of para.cells) {                        // the paramecia: near enough to a rod each
+    if (miss < best) { best = miss; hit = { kind: 'desmodesmus', k }; }
+  });
+  para.cells.forEach((g, k) => {                       // the paramecia: near enough to a rod each
     const [a, b] = g.userData.ends, R = g.userData.L * 0.11;
     for (let i = 0; i <= 10; i++) {
       const c = a.clone().lerp(b, i / 10).sub(O), t = c.dot(D);
       if (t <= 0) continue;
       const miss = c.addScaledVector(D, -t).length() - R - Math.max(3, 10 * t * perPx);
-      if (miss < best) { best = miss; hit = O.clone().addScaledVector(D, t); }
+      if (miss < best) { best = miss; hit = { kind: 'paramecium', k, u: i / 10 }; }
     }
-  }
-  if (hit) { focus.to.copy(hit); focus.left = 0.45; }
-  return !!hit;
+  });
+  surroundings.userData.tubes.forEach((g) => {         // the green filaments: lying still, so the spot is a fixed one
+    const ln = g.userData.line, R = g.userData.path[2];
+    for (let i = 0; i < ln.length; i += 3) {
+      const px = ln[i] - O.x, py = ln[i + 1] - O.y, pz = ln[i + 2] - O.z, t = px * D.x + py * D.y + pz * D.z;
+      if (t <= 0) continue;
+      const miss = Math.hypot(px - t * D.x, py - t * D.y, pz - t * D.z) - R - Math.max(1, 6 * t * perPx);
+      if (miss < best) { best = miss; hit = { kind: 'oscillatoria', p: [ln[i], ln[i + 1], ln[i + 2]] }; }
+    }
+  });
+  return hit;
 }
+// the spot to ride on. On the Lacrymaria it keeps its place on the body counted from the
+// tail, or on the neck counted from the head, as the cilia do, since the neck's length changes.
+function anchorOf(hit) {
+  if (hit.kind === 'oscillatoria') return (v) => v.set(hit.p[0], hit.p[1], hit.p[2]);
+  if (hit.kind === 'desmodesmus') return (v) => v.copy(desmo.rafts[hit.k].position);
+  if (hit.kind === 'paramecium') return (v) => { const [a, b] = para.cells[hit.k].userData.ends; return v.copy(a).lerp(b, hit.u); };
+  const L0 = common.uL.value, s0 = (hit.ring / (NR - 1)) * L0, onBody = s0 <= DATA.s_body, keep = onBody ? s0 : L0 - s0;
+  return (v) => {
+    const L = common.uL.value, f = Math.min(NR - 1, Math.max(0, ((onBody ? keep : L - keep) / L) * (NR - 1))), i = Math.min(NR - 2, Math.floor(f)), w = f - i;
+    return v.set(ringData[i * 4] * (1 - w) + ringData[i * 4 + 4] * w, ringData[i * 4 + 1] * (1 - w) + ringData[i * 4 + 5] * w, ringData[i * 4 + 2] * (1 - w) + ringData[i * 4 + 6] * w);
+  };
+}
+const panel = document.getElementById('panel'), panelBody = document.getElementById('panelBody');
+function showPanel(hit) {
+  document.body.classList.toggle('info', !!hit);
+  panel.classList.toggle('off', !hit);
+  if (!hit) return;
+  const d = INFO[hit.kind], el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+  const stats = el('div', 'stats'), list = el('ul');
+  d.stats.forEach(([v, label], i) => {
+    const s = el('div');
+    s.append(el('b', '', hit.kind === 'desmodesmus' && i === 0 ? String(desmo.rafts[hit.k].userData.spec.cells) : v), el('span', '', label));
+    stats.append(s);
+  });
+  for (const [c, name, what] of d.look) {
+    const li = el('li'), dotEl = el('i');
+    dotEl.style.setProperty('--c', c);
+    li.append(dotEl, el('b', '', name), ': ' + what);
+    list.append(li);
+  }
+  panel.style.setProperty('--accent', d.accent);
+  panelBody.replaceChildren(el('div', 'kind', d.kind), el('h2', '', d.name), el('p', 'tag', d.tag), stats,
+    ...d.text.map((t) => el('p', 'body', t)), el('h3', '', 'Look closer'), list, el('p', 'model', d.model));
+  panel.scrollTop = 0;
+}
+function select(hit) {
+  follow.anchor = hit ? anchorOf(hit) : null;
+  if (hit) follow.off.copy(controls.target).sub(follow.anchor(follow.step));
+  showPanel(hit);
+  return hit ? hit.kind : false;
+}
+const pick = (x, y) => select(hitTest(x, y));
+document.getElementById('panelClose').onclick = () => showPanel(null);
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') select(null); });
 {
   let down = null;
   canvas.addEventListener('pointerdown', (e) => { down = e.button === 0 && e.isPrimary ? { x: e.clientX, y: e.clientY, t: performance.now() } : null; });
@@ -1329,9 +1391,10 @@ function tick(now) {
     vacShells[i].material.uniforms.uRad.value = v.r * (0.3 + 0.7 * Math.cbrt(f));
     canalU.value[i] = 1.35 - 0.9 * f;
   });
-  if (focus.left > 0) {                               // slide the view and its pivot together, easing out
-    const k = Math.min(1, 1 - Math.exp(-raw / 0.09)), step = focus.to.clone().sub(controls.target).multiplyScalar((focus.left -= raw) > 0 ? k : 1);
-    controls.target.add(step); camera.position.add(step);
+  if (follow.anchor) {                                // ride along with the chosen spot, the slide towards it easing out
+    follow.off.multiplyScalar(Math.exp(-raw / 0.12));
+    follow.anchor(follow.step).add(follow.off).sub(controls.target);
+    controls.target.add(follow.step); camera.position.add(follow.step);
   }
   controls.update();
   composer.render();
@@ -1347,7 +1410,7 @@ const dbg = renderer.getContext().getExtension('WEBGL_debug_renderer_info');
 stats.gpu = dbg ? renderer.getContext().getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '';
 // for checking by screenshot: stop at time t and look at the body from dist um away
 function look(t, dist, az = -90, el = 40, along = 0) {
-  setPlay(false); state.t = t;
+  setPlay(false); select(null); state.t = t;
   const b = behave(t), c = b.C.map((v, i) => v + b.e1[i] * along);
   if (along === 'head') { updateRings(t); for (let i = 0; i < 3; i++) c[i] = ringData[(NR - 12) * 4 + i]; }
   controls.target.set(c[0], c[1], c[2]);
@@ -1356,7 +1419,7 @@ function look(t, dist, az = -90, el = 40, along = 0) {
 }
 // the same for alga k, seen from its own flat side when az and el are left out
 function lookAlga(t, k, dist, az, el) {
-  setPlay(false); state.t = t;
+  setPlay(false); select(null); state.t = t;
   desmo.update(t, camera);
   const g = desmo.rafts[k], c = g.position;
   const d = az === undefined ? new THREE.Vector3(0, 0, 1).applyQuaternion(g.quaternion)
@@ -1368,11 +1431,11 @@ function lookAlga(t, k, dist, az, el) {
 }
 // and for paramecium k: along is where on its length to look, -0.5 (back) to 0.5 (front)
 function lookPara(t, k, dist, az = -90, el = 40, along = 0) {
-  setPlay(false); state.t = t;
+  setPlay(false); select(null); state.t = t;
   para.update(t, state.clock, camera);
   const g = para.cells[k], c = g.position.clone().addScaledVector(new THREE.Vector3().setFromMatrixColumn(g.matrix, 0), along * g.userData.L);
   controls.target.copy(c); camera.up.set(0, 0, 1);
   camera.position.set(c.x + dist * Math.cos(el * RAD) * Math.cos(az * RAD), c.y + dist * Math.cos(el * RAD) * Math.sin(az * RAD), c.z + dist * Math.sin(el * RAD));
   return true;
 }
-window.viewer = { look, lookAlga, lookPara, para, desmo, pick, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
+window.viewer = { look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };

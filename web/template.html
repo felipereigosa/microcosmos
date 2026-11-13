@@ -8,24 +8,54 @@
   html, body { margin: 0; height: 100%; background: #01060b; overflow: hidden; color: #cfe9ee;
     font: 14px/1.3 system-ui, sans-serif; -webkit-user-select: none; user-select: none; }
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  #title { position: fixed; left: 18px; top: 14px; pointer-events: none; text-shadow: 0 0 8px #000; }
-  #title b { font-size: 20px; font-style: italic; font-weight: 600; }
-  #title span { display: block; opacity: .7; margin-top: 2px; }
-  #fps { position: fixed; right: 14px; top: 14px; opacity: .6; font-variant-numeric: tabular-nums; }
-  #speedBox { position: fixed; left: 18px; bottom: calc(30px + env(safe-area-inset-bottom)); display: flex; align-items: center;
+  #fps { position: fixed; left: 18px; top: 14px; opacity: .6; font-variant-numeric: tabular-nums; }
+  #speedBox { position: fixed; left: 18px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; align-items: center;
     gap: 8px; opacity: .8; }
   #speed { width: 150px; height: 28px; accent-color: #58b9c6; }
   #speedLabel { width: 4em; font-variant-numeric: tabular-nums; }
-  #credit { position: fixed; left: 18px; right: 18px; bottom: calc(10px + env(safe-area-inset-bottom)); opacity: .4;
-    font-size: 11px; pointer-events: none; }
+  #panel { position: fixed; right: 18px; top: 18px; width: 340px; max-height: calc(100% - 36px); box-sizing: border-box;
+    overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #ffffff22 transparent;
+    padding: 22px 24px 18px; border-radius: 18px; --accent: #8fd3df;
+    background: linear-gradient(160deg, rgba(10, 28, 38, .78), rgba(3, 10, 16, .82));
+    -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
+    border: 1px solid rgba(160, 220, 235, .16); box-shadow: 0 18px 50px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .06);
+    transition: opacity .35s ease, transform .35s cubic-bezier(.2, .8, .2, 1); }
+  #panel.off { opacity: 0; transform: translateX(18px); pointer-events: none; }
+  #panel .kind { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); }
+  #panel h2 { margin: 6px 28px 6px 0; font: italic 500 27px/1.15 Georgia, 'Times New Roman', serif; color: #f1fafb; }
+  #panel .tag { margin: 0; font-size: 14.5px; line-height: 1.4; opacity: .85; }
+  #panel .stats { display: grid; grid-template-columns: repeat(3, 1fr); margin: 16px 0 14px; padding: 12px 0;
+    border-top: 1px solid rgba(160, 220, 235, .14); border-bottom: 1px solid rgba(160, 220, 235, .14); }
+  #panel .stats div { padding: 0 10px; border-left: 1px solid rgba(160, 220, 235, .14); }
+  #panel .stats div:first-child { padding-left: 0; border-left: 0; }
+  #panel .stats b { display: block; font-size: 18px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+  #panel .stats span { display: block; margin-top: 2px; font-size: 11px; line-height: 1.25; opacity: .6; }
+  #panel p.body { margin: 0 0 10px; font-size: 13.5px; line-height: 1.5; opacity: .88; }
+  #panel h3 { margin: 16px 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; opacity: .55; }
+  #panel ul { list-style: none; margin: 0; padding: 0; }
+  #panel li { position: relative; margin: 0 0 7px; padding-left: 18px; font-size: 13px; line-height: 1.4; opacity: .9; }
+  #panel li i { position: absolute; left: 0; top: .42em; width: 8px; height: 8px; border-radius: 50%; background: var(--c);
+    box-shadow: 0 0 8px var(--c); }
+  #panel li b { font-weight: 600; color: #f1fafb; }
+  #panel .model { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid rgba(160, 220, 235, .14); font-size: 11px;
+    line-height: 1.45; opacity: .5; }
+  #panelClose { position: absolute; right: 12px; top: 12px; width: 32px; height: 32px; border: 0; border-radius: 50%;
+    background: rgba(255, 255, 255, .06); color: #cfe9ee; font-size: 18px; line-height: 1; cursor: pointer; }
+  #panelClose:hover { background: rgba(255, 255, 255, .14); }
+  @media (max-width: 640px) {
+    #panel { left: 10px; right: 10px; top: auto; bottom: calc(10px + env(safe-area-inset-bottom)); width: auto; max-height: 46%;
+      padding: 18px 18px 14px; }
+    #panel.off { transform: translateY(18px); }
+    #panel h2 { font-size: 23px; }
+    body.info #speedBox { display: none; }
+  }
 </style>
 </head>
 <body>
 <canvas id="view"></canvas>
-<div id="title"><b>Lacrymaria olor</b><span>drag to orbit · pinch or scroll to zoom · click any of them to orbit about that spot</span></div>
 <div id="fps" hidden></div>
 <label id="speedBox">Speed <input id="speed" type="range" min="0" max="6" step="1" aria-label="Simulation speed; all the way left pauses"><span id="speedLabel"></span></label>
-<div id="credit">Cell measured from footage by James Weiss, Journey to the Microcosmos. Structure after Flaum &amp; Prakash, Science 2024. The alga Desmodesmus communis after Hegewald &amp; Braband, Fottea 2017. Paramecium after Brette, eNeuro 2021, and videos by Alexander Klepnev (Wikimedia Commons, CC BY 4.0). Behaviour and detail are modelled, not observed.</div>
+<aside id="panel" class="off" aria-live="polite"><button id="panelClose" aria-label="Close">×</button><div id="panelBody"></div></aside>
 <script>/*BUNDLE*/</script>
 </body>
 </html>

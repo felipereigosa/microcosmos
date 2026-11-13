@@ -309,7 +309,32 @@ the next.
   tested against the centreline rings on the CPU, with a margin for the
   cilia. The pivot stays put; it does not follow the animal. A click on
   open water does nothing. Checked with simulated clicks in the test
-  Chromium.
+  Chromium. **Replaced the same day, see the next point.**
+  **Click to select, follow and explain (2026-11-13, his request; no verdict
+  yet).** A click on any organism selects it (`hitTest`, `select`,
+  `anchorOf` in `web/src/main.js`): the pivot slides to the clicked spot and
+  then rides with it (camera and pivot are moved by the same step every
+  frame, so the orbit and zoom he has set are kept), and a panel opens with
+  what `web/src/info.js` says about that species: name, three figures, two
+  paragraphs, a "look closer" list whose dots are the colours the organelles
+  are drawn in, and a line on sources and on what is modelled. On the
+  Lacrymaria the followed spot keeps its place counted from the tail on the
+  body and from the head on the neck, so a click on the head rides the head
+  as the neck is thrown. A click on open water or Escape lets go; the cross
+  only hides the panel. This reverses the earlier "the camera must not
+  follow" for a selected organism, at his request; with nothing selected the
+  view is still fixed. Removed at the same time, as he asked: the title, the
+  instructions and the credits line on the page. **The credits now appear
+  only in the panels' last line** (see Rights before publishing). Under
+  640 px wide the panel is a sheet at the bottom and hides the speed slider;
+  that layout has not been looked at on a phone. The `<title>` tag still
+  says "Lacrymaria olor" (his goal "change the title" is open).
+  **The green filaments too (same day, after he asked whether they should):**
+  a click on one of the three thick filaments opens an "Oscillatoria" panel
+  and puts the pivot on the clicked spot of its centreline
+  (`userData.line`); they lie still, so there is nothing to follow. The
+  panel says the genus is a guess from their look. The fine filaments, the
+  flocs and the orange cells are not clickable.
   To do: his `goals.txt` (flickering is crossed off there, see step 7):
   more complex organelles, other organisms (paramecium, algae
   with walls), removing the play controls, a GitHub project, hosting,
@@ -431,6 +456,29 @@ version when the session ended.**
   over the paper's 23. All um figures elsewhere in this file are scene units.
 - **Open.** At the usual 1/4 speed a dart lasts about 4 s and a swing half a
   minute. The page title still says only "Lacrymaria olor".
+
+## Ideas for more, offered 2026-11-13
+
+Felipe asked what would take "the wow factor to 11". Offered, in this order;
+**he has not chosen** (the session ended there). Recommended starting with
+the first two, since they improve what is already in the scene.
+
+1. The Lacrymaria catches something: a few small, fast ciliates about the
+   debris; once per loop the neck strikes one, the head swells round it and
+   the lump travels down the neck to become a food vacuole. Look at real
+   footage of a Lacrymaria feeding first.
+2. Depth of field with the focal plane on the pivot, so a click pulls focus
+   to the organism.
+3. Water that moves: the motes swept by the paramecia's cilia and swirled at
+   the Lacrymaria's head.
+4. One reactive organism: Vorticella on a green filament, snapping into a
+   coil when something passes (or a Stentor drawing a vortex).
+5. One animal: a rotifer. A tardigrade would be far bigger than the rest and
+   break "the Lacrymaria is the biggest".
+6. Touch: a tap near a paramecium sets off its avoiding reaction; a first
+   step towards his "turn it into a game?".
+7. Smaller: the Oscillatoria glide and sway, a scale bar that follows the
+   zoom, an opening shot falling in from a whole drop, gliding diatoms.
 
 ## Later subjects
 
