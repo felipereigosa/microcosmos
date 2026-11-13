@@ -446,6 +446,7 @@ function makeCilia() {
   const lines = new THREE.LineSegments(g, m);
   lines.frustumCulled = false;
   lines.userData.count = roots.length;
+  lines.userData.roots = roots;
   return lines;
 }
 
@@ -572,6 +573,324 @@ function makeExtrusomes() {
   const l = new THREE.LineSegments(g, m);
   l.frustumCulled = false;
   return l;
+}
+
+// ------------------------------------------------------- organelles, close up
+// From a distance the cell looks as it did: shells and beads. Coming closer, the
+// blobs gain parts, drawn as a textbook would rather than as they look in life
+// (where they stay colourless blobs): pores and chromatin in the nuclei with folded
+// reticulum around them, mitochondria with cristae, Golgi stacks, canals feeding the
+// contractile vacuoles, prey in the food vacuoles, the basket of rods in the head,
+// and a basal body under every cilium. Everything rides in the cell's own frame and
+// fades in between two distances from the camera (um): [all there, gone].
+const LOD_MID = [90, 230], LOD_NEAR = [55, 140];
+const NUC_STRETCH = Math.max(1, Math.min(1, (KS / SIZE) * 1.3));
+const NUCLEI = [
+  { s: 80 * KS, rho: 0.18, phi: 0.6, r: 7.2 * SIZE, stretch: Math.max(1, 1.45 * NUC_STRETCH) },
+  { s: 99 * KS, rho: 0.15, phi: 3.6, r: 6.6 * SIZE, stretch: Math.max(1, 1.35 * NUC_STRETCH) },
+];
+const MICRO = { s: 90 * KS, rho: 0.42, phi: 2.2, r: 2.3 * SIZE };
+// the contractile vacuoles fill slowly and empty at a stroke, each at its own pace
+const VACS = [
+  { s: 27 * KS, rho: 0.15, phi: 1.0, r: 5.0 * SIZE, period: 4.6, phase: 0.0 },
+  { s: 128 * KS, rho: 0.2, phi: 4.0, r: 3.2 * SIZE, period: 6.1, phase: 0.45 },
+];
+function vacFill(v, t) {
+  const x = (((t / v.period + v.phase) % 1) + 1) % 1;
+  return x < 0.88 ? sstep(x / 0.88) : 1 - smoother((x - 0.88) / 0.12);
+}
+const canalU = { value: [1, 1] };
+
+function makeDetail(food, roots) {
+  const dr = mulberry(2024), du = (a, b) => a + (b - a) * dr();
+  const dgs = () => Math.sqrt(-2 * Math.log(1 - dr())) * Math.cos(2 * Math.PI * dr());
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const unit = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+  // a turn that takes the x axis to ax, with a roll about it
+  const rotTo = (ax, roll = 0) => {
+    ax = unit(ax);
+    const b0 = unit(cross(ax, Math.abs(ax[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0])), c0 = cross(ax, b0), c = Math.cos(roll), sn = Math.sin(roll);
+    return [ax, b0.map((v, i) => c * v + sn * c0[i]), c0.map((v, i) => c * v - sn * b0[i])];
+  };
+  const anyDir = () => { const z = du(-1, 1), a = du(0, 6.2832), q = Math.sqrt(1 - z * z); return [z, q * Math.cos(a), q * Math.sin(a)]; };
+  const turn = (M, p) => [p[0] * M[0][0] + p[1] * M[1][0] + p[2] * M[2][0], p[0] * M[0][1] + p[1] * M[1][1] + p[2] * M[2][1], p[0] * M[0][2] + p[1] * M[1][2] + p[2] * M[2][2]];
+  const I3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+
+  // the body is straight where the organelles sit, so places can be compared in
+  // plain coordinates: along the cell, and across it
+  const rAt = (sv) => interp(sv, BODY_S, DATA.r_body);
+  const flat = (sv, rho, phi) => [sv, rho * rAt(sv) * Math.cos(phi), rho * rAt(sv) * Math.sin(phi)];
+  const taken = [];
+  const free = (q, r) => taken.every((k) => Math.hypot(q[0] - k[0], q[1] - k[1], q[2] - k[2]) > r + k[3]);
+  for (const n of NUCLEI) for (const e of [-0.4, 0.4]) { const q = flat(n.s, n.rho, n.phi); taken.push([q[0] + e * n.r * n.stretch, q[1], q[2], n.r * 1.25]); }
+  for (const o of [MICRO, ...VACS, ...food]) taken.push([...flat(o.s, o.rho, o.phi), o.r * 1.15]);
+
+  // ---- surfaces: one mesh for all of them
+  const T = { pos: [], nor: [], uv: [], anc: [], edge: [], core: [], fx: [], pulse: [], idx: [] };
+  // f(u, v) gives [x, y, z, pattern u, pattern v, and for things that swell: the point they swell about]
+  function surf(nu, nv, f, o) {
+    const base = T.pos.length / 3, M = o.rot || I3, off = o.off || [0, 0, 0], e = 0.004;
+    for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+      const u = i / nu, v = j / nv, q = f(u, v), vc = Math.min(0.985, Math.max(0.015, v));
+      const a = f(u + e, vc), b = f(u - e, vc), c = f(u, vc + e), d = f(u, vc - e);
+      const n = turn(M, unit(cross([a[0] - b[0], a[1] - b[1], a[2] - b[2]], [c[0] - d[0], c[1] - d[1], c[2] - d[2]])));
+      const w = turn(M, q);
+      T.pos.push(w[0] + off[0], w[1] + off[1], w[2] + off[2]); T.nor.push(n[0], n[1], n[2]); T.uv.push(q[3], q[4]);
+      const ctr = q.length > 5 ? turn(M, [q[5], q[6], q[7]]) : [0, 0, 0];
+      T.pulse.push(ctr[0] + off[0], ctr[1] + off[1], ctr[2] + off[2], o.pulse || 0);
+      T.anc.push(o.at.s, o.at.rho, o.at.phi, o.head ? 1 : 0);
+      T.edge.push(o.edge[0], o.edge[1], o.edge[2], o.strength); T.core.push(o.core[0], o.core[1], o.core[2], o.pow || 1.6);
+      T.fx.push(o.kind || 0, o.lod[0], o.lod[1], o.param || 0);
+    }
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+      const a = base + j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1;
+      T.idx.push(a, b, d, a, d, c);
+    }
+  }
+  const ball = (rx, ry, rz) => (u, v) => { const a = 6.2832 * u, b = Math.PI * v; return [-rx * Math.cos(b), ry * Math.sin(b) * Math.cos(a), rz * Math.sin(b) * Math.sin(a), a, b]; };
+  const lathe = (X, R, bend = 0) => (u, v) => { const x = X(v), r = R(v), a = 6.2832 * u; return [x, r * Math.cos(a) + bend * x * x, r * Math.sin(a), x, a, x, bend * x * x, 0]; };
+
+  // ---- dots: vesicles, chromatin, basal bodies
+  const D = { pos: [], anc: [], col: [], fx: [] };
+  // mode 0: a place in the cell counted from the tail, 1: from the head, 2 and 3: at the foot of a cilium
+  const dot = (at, off, rad, col, lod, style = 0, jitter = 0, mode = 0) => {
+    D.pos.push(off[0], off[1], off[2]); D.anc.push(at.s, at.rho, at.phi, mode); D.col.push(col[0], col[1], col[2], rad); D.fx.push(lod[0], lod[1], style, jitter);
+  };
+
+  // nuclei: pores in the envelope, chromatin bodies and nucleoli inside, and sheets of
+  // rough reticulum folded round one side
+  NUCLEI.forEach((n, k) => {
+    surf(40, 26, ball(n.r * n.stretch * 1.005, n.r * 1.005, n.r * 1.005), { at: n, edge: [1.0, 0.45, 0.8], core: [0.0, 0.0, 0.0], strength: 0.0, kind: 2, param: 13, lod: LOD_MID });
+    for (let i = 0; i < 90; i++) {
+      const d = anyDir(), q = Math.cbrt(dr()) * 0.86, w = dr();
+      dot(n, [d[0] * q * n.r * n.stretch, d[1] * q * n.r, d[2] * q * n.r], du(0.22, 0.5) * (0.6 + 0.6 * q),
+        w < 0.5 ? [0.34, 0.07, 0.27] : w < 0.85 ? [0.22, 0.08, 0.36] : [0.42, 0.14, 0.20], LOD_MID, 0, 0.05);
+    }
+    for (let i = 0; i < 6; i++) {
+      const d = anyDir(), q = du(0.15, 0.7), r = du(0.11, 0.2) * n.r;
+      surf(12, 8, ball(r, r, r), { at: n, off: [d[0] * q * n.r * n.stretch, d[1] * q * n.r, d[2] * q * n.r], edge: [1.0, 0.62, 0.78], core: [0.20, 0.07, 0.13], strength: 0.36, pow: 1.5, lod: LOD_MID });
+    }
+    const al = n.phi + (k ? 0.7 : -0.7), A = [0, Math.cos(al), Math.sin(al)], C = cross(A, [1, 0, 0]);
+    for (let i = 0; i < 3; i++) {
+      const R = n.r * (1.2 + 0.17 * i), th = 1.0 - 0.14 * i, ps = 0.85 - 0.12 * i, ph = du(0, 6.28), t0 = du(-0.25, 0.25);
+      surf(34, 12, (u, v) => {
+        const a = t0 + th * (2 * u - 1), b = ps * (2 * v - 1), rr = R * (1 + 0.05 * Math.sin(7 * a + ph) + 0.035 * Math.sin(5 * b + 2 * ph));
+        const c = Math.cos(b) * Math.cos(a), sx = Math.cos(b) * Math.sin(a), sc = Math.sin(b);
+        return [rr * sx * n.stretch, rr * (c * A[1] + sc * C[1]), rr * (c * A[2] + sc * C[2]), a * R, b * R];
+      }, { at: n, edge: [0.40, 0.48, 1.0], core: [0.012, 0.018, 0.07], strength: 0.24, pow: 1.8, kind: 3, lod: LOD_MID });
+    }
+  });
+  // micronucleus: a dense knot of chromatin
+  surf(14, 10, ball(MICRO.r * 0.62, MICRO.r * 0.62, MICRO.r * 0.62), { at: MICRO, edge: [1.0, 0.55, 0.85], core: [0.28, 0.06, 0.20], strength: 0.5, pow: 1.4, lod: LOD_MID });
+
+  // contractile vacuoles: canals that swell while the vacuole is empty and drain into
+  // it as it fills, kept short where the cell is narrow
+  VACS.forEach((v, k) => {
+    const tang = [0, -Math.sin(v.phi), Math.cos(v.phi)], c0 = flat(v.s, v.rho, v.phi), nC = 8;
+    for (let j = 0; j < nC; j++) {
+      const a = (j + 0.5 * k) * 6.2832 / nC + du(-0.15, 0.15), tilt = du(-0.3, 0.3);
+      const dir = unit([Math.cos(a), Math.sin(a) * tang[1] + tilt * Math.cos(v.phi), Math.sin(a) * tang[2] + tilt * Math.sin(v.phi)]);
+      let len = v.r * du(2.5, 3.3);
+      const inside = (l) => { const e = c0.map((q, i) => q + dir[i] * l); return e[0] > 2 && e[0] < DATA.s_body - 2 && Math.hypot(e[1], e[2]) < rAt(e[0]) - 1.5; };
+      while (len > v.r * 1.5 && !inside(len)) len -= 0.2;
+      if (len <= v.r * 1.5) continue;
+      const x0 = v.r * 1.04, w = v.r * du(0.20, 0.27);
+      surf(8, 22, lathe((q) => x0 + (len - x0) * q,
+        (q) => w * (0.22 + 0.78 * Math.exp(-(((q - 0.3) / 0.2) ** 2)) + 0.16 * (1 - q)) * sstep((1 - q) / 0.08) * (0.4 + 0.6 * sstep(q / 0.05))),
+        { at: v, rot: rotTo(dir), edge: [0.55, 0.85, 1.0], core: [0.01, 0.03, 0.05], strength: 0.5, pow: 2.0, pulse: k + 1, lod: LOD_MID });
+    }
+  });
+
+  // mitochondria: bent capsules under the wall, cristae showing through
+  let made = 0;
+  for (let tries = 0; made < 52 && tries < 4000; tries++) {
+    const sv = du(5, DATA.s_body - 7), hl = du(1.0, 1.7), rm = du(0.42, 0.58), R = rAt(sv);
+    const y = R - 1.5 - rm - Math.abs(dgs()) * 2.2;
+    if (y < 0.5) continue;
+    const phi = du(0, 6.2832), at = { s: sv, rho: y / R, phi }, q = flat(sv, at.rho, phi);
+    if (!free(q, hl * 0.8)) continue;
+    const g = du(0, 6.2832), lean = du(-0.25, 0.25);
+    const ax = [Math.cos(g), -Math.sin(g) * Math.sin(phi) + lean * Math.cos(phi), Math.sin(g) * Math.cos(phi) + lean * Math.sin(phi)];
+    surf(10, 14, lathe((v) => -hl * Math.cos(Math.PI * v), (v) => rm * Math.pow(Math.max(0, Math.sin(Math.PI * v)), 0.55), du(-0.14, 0.14)),
+      { at, rot: rotTo(ax, du(0, 6.28)), edge: [1.0, 0.36, 0.18], core: [0.07, 0.012, 0.006], strength: 0.42, pow: 1.7, kind: 1, param: hl, lod: LOD_MID });
+    taken.push([...q, hl * 0.8]);
+    made++;
+  }
+
+  // Golgi: stacks of bowed cisternae with swollen rims, shedding vesicles
+  made = 0;
+  for (let tries = 0; made < 6 && tries < 2000; tries++) {
+    const sv = du(12, DATA.s_body - 13), R = rAt(sv), Rg = du(1.3, 1.75), y = du(0.2, 1) * (R - 2 - Rg);
+    if (y < 0) continue;
+    const at = { s: sv, rho: y / R, phi: du(0, 6.2832) }, q = flat(sv, at.rho, at.phi);
+    if (!free(q, Rg * 1.15)) continue;
+    const M = rotTo(anyDir(), du(0, 6.28)), nc = 5;
+    for (let i = 0; i < nc; i++) {
+      const rg = Rg * (1 - 0.08 * i), x0 = (i - 2) * 0.42, bow = 0.16 / Rg;
+      surf(16, 10, (u, v) => {
+        const a = 6.2832 * u, b = Math.PI * v, sb = Math.sin(b), wob = 1 + 0.07 * Math.sin(3 * a + i);
+        const yy = rg * wob * sb * Math.cos(a), zz = rg * wob * sb * Math.sin(a);
+        return [x0 - (0.07 + 0.11 * Math.pow(Math.abs(sb), 8)) * Math.cos(b) + bow * (yy * yy + zz * zz), yy, zz, a, b];
+      }, { at, rot: M, edge: [1.0, 0.78, 0.22], core: [0.035, 0.022, 0.003], strength: 0.34, pow: 2.0, lod: LOD_MID });
+    }
+    for (let i = 0; i < 9; i++) {                                     // vesicles budding off the rims and the far face
+      const a = du(0, 6.2832), far = dr() < 0.35, rr = far ? du(0, 0.8) * Rg : Rg * du(1.05, 1.4);
+      dot(at, turn(M, [far ? du(1.0, 1.7) : du(-0.6, 1.0), rr * Math.cos(a), rr * Math.sin(a)]), du(0.11, 0.2), [0.75, 0.58, 0.20], LOD_MID, 1, 0.12);
+    }
+    taken.push([...q, Rg * 1.15]);
+    made++;
+  }
+
+  // food vacuoles: what was eaten, greener the fresher, with lysosomes gathering round
+  food.forEach((f, k) => {
+    const age = k / Math.max(1, food.length - 1);
+    const edge = age < 0.4 ? [0.45, 0.95, 0.30] : age < 0.75 ? [0.80, 0.78, 0.25] : [0.85, 0.50, 0.20];
+    for (let i = 0; i < (age < 0.4 ? 1 : 2); i++) {
+      const r = f.r * (age < 0.4 ? du(0.5, 0.6) : du(0.28, 0.4)), d = anyDir(), q = (f.r - r) * du(0.3, 0.75);
+      surf(14, 10, ball(r * du(1.0, 1.25), r, r * du(0.8, 1)), { at: f, off: d.map((x) => x * q), rot: rotTo(anyDir()), edge, core: edge.map((x) => x * 0.14), strength: 0.4, pow: 1.5, kind: 5, lod: LOD_MID });
+    }
+    for (let i = 0; i < 6; i++) { const d = anyDir(); dot(f, d.map((x) => x * f.r * du(1.05, 1.3)), du(0.16, 0.3), [0.50, 0.36, 0.80], LOD_MID, 1, 0.15); }
+  });
+
+  // a basal body at the foot of every cilium
+  for (const [a, type, k] of roots) dot({ s: a, rho: 0, phi: k }, [0, 0, 0], 0.11, [0.62, 0.52, 0.28], LOD_NEAR, 0, 0, 2 + type);
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(T.pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(T.nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(T.uv, 2));
+  g.setAttribute('aAnchor', new THREE.Float32BufferAttribute(T.anc, 4));
+  g.setAttribute('aEdge', new THREE.Float32BufferAttribute(T.edge, 4));
+  g.setAttribute('aCore', new THREE.Float32BufferAttribute(T.core, 4));
+  g.setAttribute('aFx', new THREE.Float32BufferAttribute(T.fx, 4));
+  g.setAttribute('aPulse', new THREE.Float32BufferAttribute(T.pulse, 4));
+  g.setIndex(T.idx);
+  const m = mat({
+    ...ADD, side: THREE.DoubleSide, uniforms: { uCanal: canalU },
+    vertexShader: RING_GLSL + /* glsl */ `
+      in vec4 aAnchor, aEdge, aCore, aFx, aPulse;
+      uniform float uCanal[2];
+      out vec3 vN; out vec3 vView; out vec4 vEdge; out vec4 vCore; out vec2 vUv; out vec2 vKind; out float vLod;
+      void main() {
+        Ring g = ringAt(aAnchor.w > 0.5 ? uL - aAnchor.x : aAnchor.x);
+        vec3 B = cross(g.T, g.N), pl = position;
+        if (aPulse.w > 0.5) pl = aPulse.xyz + (pl - aPulse.xyz) * uCanal[int(aPulse.w - 0.5)];
+        vec3 c = g.C + g.r * aAnchor.y * (cos(aAnchor.z) * g.N + sin(aAnchor.z) * B);
+        vec4 mv = modelViewMatrix * vec4(c + pl.x * g.T + pl.y * g.N + pl.z * B, 1.0);
+        vN = mat3(modelViewMatrix) * (normal.x * g.T + normal.y * g.N + normal.z * B);
+        vView = mv.xyz; vEdge = aEdge; vCore = aCore; vUv = uv; vKind = aFx.xw;
+        vLod = 1.0 - smoothstep(aFx.y, aFx.z, -mv.z);
+        gl_Position = vLod <= 0.0 ? vec4(2.0, 2.0, 2.0, 1.0) : projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */ `
+      precision highp float;
+      in vec3 vN; in vec3 vView; in vec4 vEdge; in vec4 vCore; in vec2 vUv; in vec2 vKind; in float vLod;
+      out vec4 frag;
+      void main() {
+        float f = dot(vN, vN) > 0.0 ? clamp(1.0 - abs(dot(normalize(vN), normalize(-vView))), 0.0, 1.0) : 0.0;   // clamped: see the pellicle
+        vec3 c = mix(vCore.rgb, vEdge.rgb, pow(f, vCore.a)) * vEdge.a;
+        float kind = vKind.x, flatness = 1.0 - f;
+        if (kind > 0.5 && kind < 1.5) {
+          // cristae: shelves across the mitochondrion, reaching in from alternate sides
+          float q = vUv.x / 0.44 + 0.35 * sin(vUv.y), i = floor(q);
+          float line = 1.0 - smoothstep(0.10, 0.26, abs(fract(q) - 0.5));
+          line *= smoothstep(-0.8, -0.3, cos(vUv.y - 3.14159 * mod(i, 2.0)));
+          line *= 1.0 - smoothstep(vKind.y - 0.7, vKind.y - 0.4, abs(vUv.x));
+          c += vec3(1.0, 0.50, 0.22) * line * 0.26 * flatness;
+        } else if (kind > 1.5 && kind < 2.5) {
+          // nuclear pores: dots spread evenly over the envelope
+          float rows = vKind.y, row = floor(vUv.y / 3.14159 * rows);
+          float n = max(1.0, floor(2.0 * rows * sin((row + 0.5) / rows * 3.14159)));
+          vec2 g = vec2(fract(vUv.x / 6.28318 * n + 0.37 * row) - 0.5, fract(vUv.y / 3.14159 * rows) - 0.5);
+          float d = length(g);
+          c += vEdge.rgb * (smoothstep(0.34, 0.24, d) - 0.8 * smoothstep(0.17, 0.09, d)) * 0.15 * (0.35 + 0.65 * flatness);
+        } else if (kind > 2.5 && kind < 3.5) {
+          // ribosomes studding the reticulum
+          vec2 q = vUv * 3.4; q.x += 0.5 * mod(floor(q.y), 2.0);
+          c += vec3(0.75, 0.80, 1.0) * smoothstep(0.30, 0.14, length(fract(q) - 0.5)) * 0.10 * (0.3 + 0.7 * flatness);
+        } else if (kind > 4.5) {
+          c *= 0.75 + 0.45 * sin(vUv.y * 14.0 + 2.0 * sin(vUv.x * 3.0));                // the layered inside of an alga
+        }
+        frag = vec4(c * vLod, 1.0);
+      }`,
+  });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.frustumCulled = false;
+
+  const dg = new THREE.BufferGeometry();
+  dg.setAttribute('position', new THREE.Float32BufferAttribute(D.pos, 3));
+  dg.setAttribute('aAnchor', new THREE.Float32BufferAttribute(D.anc, 4));
+  dg.setAttribute('aCol', new THREE.Float32BufferAttribute(D.col, 4));
+  dg.setAttribute('aFx', new THREE.Float32BufferAttribute(D.fx, 4));
+  const dm = mat({
+    ...ADD, uniforms: { uSBody: { value: DATA.s_body }, uRNeck: { value: DATA.r_neck } },
+    vertexShader: RING_GLSL + /* glsl */ `
+      in vec4 aAnchor, aCol, aFx;
+      uniform float uTime, uPx, uSBody, uRNeck;
+      out vec3 vCol; out float vStyle;
+      void main() {
+        float mode = aAnchor.w;
+        float s = (mode > 0.5 && mode < 1.5) || mode > 2.5 ? uL - aAnchor.x : aAnchor.x;
+        Ring g = ringAt(s);
+        vec3 B = cross(g.T, g.N), p;
+        bool vis = true;
+        if (mode > 1.5) {
+          float phi = g.psi + TAU * aAnchor.z / PLEATS;
+          p = g.C + (g.r - g.depth) * (cos(phi) * g.N + sin(phi) * B);
+          vis = (mode < 2.5 ? s <= uSBody : s > uSBody) && g.r >= 0.25 * uRNeck;
+        } else {
+          float seed = dot(position, vec3(12.9898, 78.233, 37.719)) + aAnchor.x;
+          vec3 jig = aFx.w * vec3(sin(uTime * 7.0 + seed), sin(uTime * 5.3 + seed * 1.7), sin(uTime * 6.1 + seed * 2.3));
+          vec3 pl = position + jig;
+          p = g.C + g.r * aAnchor.y * (cos(aAnchor.z) * g.N + sin(aAnchor.z) * B) + pl.x * g.T + pl.y * g.N + pl.z * B;
+        }
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        float px = 2.0 * aCol.a * uPx / -mv.z, lod = 1.0 - smoothstep(aFx.x, aFx.y, -mv.z);
+        gl_PointSize = max(1.5, px);
+        vCol = aCol.rgb * lod * min(1.0, (px * px) / 2.25); vStyle = aFx.z;
+        gl_Position = vis && lod > 0.0 ? projectionMatrix * mv : vec4(2.0, 2.0, 2.0, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      precision highp float;
+      in vec3 vCol; in float vStyle; out vec4 frag;
+      void main() {
+        vec2 c = gl_PointCoord * 2.0 - 1.0;
+        float r2 = dot(c, c);
+        if (r2 > 1.0) discard;
+        float a = vStyle > 0.5 ? 0.10 + 0.55 * smoothstep(0.30, 0.85, r2) * (1.0 - smoothstep(0.85, 1.0, r2))   // a vesicle: a ring
+                               : 0.50 * exp(-r2 * 2.0) * (1.0 - r2);                                              // a soft grain
+        frag = vec4(vCol * a, 1.0);
+      }`,
+  });
+  const dots = new THREE.Points(dg, dm);
+  dots.frustumCulled = false;
+
+  // the basket: rods running back from the mouth through the head, as in a cutaway
+  const nRod = 14, nSeg = 12, bp = [];
+  for (let k = 0; k < nRod; k++) for (let i = 0; i < nSeg; i++) for (let e = 0; e < 2; e++) {
+    const q = (i + e) / nSeg;
+    bp.push(0.35 + 12.5 * q * HS * 1.75, 0.52 - 0.1 * q, (k / nRod) * 6.2832 + 0.55 * q);
+  }
+  const bg = new THREE.BufferGeometry();
+  bg.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3));
+  const bm = mat({
+    ...ADD,
+    vertexShader: RING_GLSL + /* glsl */ `
+      out float vGain;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(inCell(uL - position.x, position.y, position.z), 1.0);
+        vGain = (1.0 - smoothstep(${LOD_MID[0].toFixed(1)}, ${LOD_MID[1].toFixed(1)}, -mv.z)) * (1.0 - 0.6 * smoothstep(4.0, 12.0, position.x));
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */ `precision highp float; in float vGain; out vec4 frag; void main() { frag = vec4(vec3(0.85, 0.80, 0.50) * 0.30 * vGain, 1.0); }`,
+  });
+  const basket = new THREE.LineSegments(bg, bm);
+  basket.frustumCulled = false;
+
+  const grp = new THREE.Group();
+  grp.add(mesh, dots, basket);
+  grp.userData.count = { triangles: T.idx.length / 3, dots: D.pos.length / 3 };
+  return grp;
 }
 
 // -- the water: drifting motes, so there is something to move through
@@ -871,15 +1190,17 @@ const cilia = makeCilia();
 const surroundings = makeSurroundings();
 scene.add(surroundings, makeMotes());
 animal.add(pellicle, cilia, makeExtrusomes());
-const st = Math.max(1, Math.min(1, (KS / SIZE) * 1.3));
+const NUC = { edge: [0.90, 0.22, 0.62], core: [0.06, 0.005, 0.045], strength: 0.42 };
+const VAC = { edge: [0.55, 0.85, 1.0], core: [0, 0.003, 0.006], strength: 0.7, pow: 3.0 };
 [
-  { s: 80 * KS, rho: 0.18, phi: 0.6, r: 7.2 * SIZE, stretch: Math.max(1, 1.45 * Math.min(1, (KS / SIZE) * 1.3)), edge: [0.90, 0.22, 0.62], core: [0.06, 0.005, 0.045], strength: 0.42 },
-  { s: 99 * KS, rho: 0.15, phi: 3.6, r: 6.6 * SIZE, stretch: Math.max(1, 1.35 * Math.min(1, (KS / SIZE) * 1.3)), edge: [0.90, 0.22, 0.62], core: [0.06, 0.005, 0.045], strength: 0.42 },
-  { s: 90 * KS, rho: 0.42, phi: 2.2, r: 2.3 * SIZE, edge: [1.0, 0.45, 0.8], core: [0.12, 0.02, 0.08], strength: 0.5 },
-  { s: 27 * KS, rho: 0.15, phi: 1.0, r: 5.0 * SIZE, edge: [0.55, 0.85, 1.0], core: [0, 0.003, 0.006], strength: 0.7, pow: 3.0 },
-  { s: 128 * KS, rho: 0.2, phi: 4.0, r: 3.2 * SIZE, edge: [0.55, 0.85, 1.0], core: [0, 0.003, 0.006], strength: 0.7, pow: 3.0 },
+  ...NUCLEI.map((n) => ({ ...n, ...NUC })),
+  { ...MICRO, edge: [1.0, 0.45, 0.8], core: [0.12, 0.02, 0.08], strength: 0.5 },
   ...food.map((f) => ({ ...f, edge: [0.60, 0.85, 0.25], core: [0.006, 0.016, 0.003], strength: 0.24, pow: 2.4 })),
 ].forEach((o) => animal.add(makeShell(o)));
+const vacShells = VACS.map((v) => makeShell({ ...v, ...VAC }));
+animal.add(...vacShells);
+const detail = makeDetail(food, cilia.userData.roots);
+animal.add(detail);
 
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
@@ -937,6 +1258,36 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'f') fpsEl.hidden = !fpsEl.hidden;
 });
 
+// A left click on the animal (a click, not a drag) puts the pivot of the view there:
+// the view slides over until that spot is in the middle, and orbiting and zooming
+// then go about it. The pivot stays where it was put; it does not follow the animal.
+// The animal is shaped on the GPU, so the click is tested against its centreline.
+const picker = new THREE.Raycaster(), focus = { left: 0, to: new THREE.Vector3() };
+function pick(x, y) {
+  const rect = canvas.getBoundingClientRect();
+  picker.setFromCamera(new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, 1 - ((y - rect.top) / rect.height) * 2), camera);
+  const O = picker.ray.origin, D = picker.ray.direction, perPx = (2 * Math.tan((camera.fov * Math.PI) / 360)) / rect.height;
+  let best = 0, hit = null;
+  for (let i = 0; i < NR; i++) {
+    const px = ringData[i * 4] - O.x, py = ringData[i * 4 + 1] - O.y, pz = ringData[i * 4 + 2] - O.z;
+    const t = px * D.x + py * D.y + pz * D.z;
+    if (t <= 0) continue;
+    const d = Math.hypot(px - t * D.x, py - t * D.y, pz - t * D.z);
+    const miss = d - ringData[i * 4 + 3] - Math.max(3, 10 * t * perPx);     // the cilia count, and so do a few pixels around
+    if (miss < best) { best = miss; hit = O.clone().addScaledVector(D, t); }
+  }
+  if (hit) { focus.to.copy(hit); focus.left = 0.45; }
+  return !!hit;
+}
+{
+  let down = null;
+  canvas.addEventListener('pointerdown', (e) => { down = e.button === 0 && e.isPrimary ? { x: e.clientX, y: e.clientY, t: performance.now() } : null; });
+  canvas.addEventListener('pointerup', (e) => {
+    if (down && e.button === 0 && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5 && performance.now() - down.t < 500) pick(e.clientX, e.clientY);
+    down = null;
+  });
+}
+
 let last = performance.now(), fpsAcc = 0, fpsN = 0, slow = 0;
 const stats = { fps: 0, cilia: cilia.userData.count, triangles: 0, period: PERIOD };
 function tick(now) {
@@ -948,6 +1299,15 @@ function tick(now) {
   state.clock += dt * state.speed;                    // the cilia keep beating through the loop
   common.uL.value = updateRings(state.t);
   common.uTime.value = state.clock;
+  VACS.forEach((v, i) => {
+    const f = vacFill(v, state.clock);
+    vacShells[i].material.uniforms.uRad.value = v.r * (0.3 + 0.7 * Math.cbrt(f));
+    canalU.value[i] = 1.35 - 0.9 * f;
+  });
+  if (focus.left > 0) {                               // slide the view and its pivot together, easing out
+    const k = Math.min(1, 1 - Math.exp(-raw / 0.09)), step = focus.to.clone().sub(controls.target).multiplyScalar((focus.left -= raw) > 0 ? k : 1);
+    controls.target.add(step); camera.position.add(step);
+  }
   controls.update();
   composer.render();
   fpsAcc += dt; fpsN++;
@@ -960,4 +1320,13 @@ function tick(now) {
 requestAnimationFrame(tick);
 const dbg = renderer.getContext().getExtension('WEBGL_debug_renderer_info');
 stats.gpu = dbg ? renderer.getContext().getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '';
-window.viewer = { state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
+// for checking by screenshot: stop at time t and look at the body from dist um away
+function look(t, dist, az = -90, el = 40, along = 0) {
+  setPlay(false); state.t = t;
+  const b = behave(t), c = b.C.map((v, i) => v + b.e1[i] * along);
+  if (along === 'head') { updateRings(t); for (let i = 0; i < 3; i++) c[i] = ringData[(NR - 12) * 4 + i]; }
+  controls.target.set(c[0], c[1], c[2]);
+  camera.position.set(c[0] + dist * Math.cos(el * RAD) * Math.cos(az * RAD), c[1] + dist * Math.cos(el * RAD) * Math.sin(az * RAD), c[2] + dist * Math.sin(el * RAD));
+  return true;
+}
+window.viewer = { look, pick, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };

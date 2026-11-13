@@ -281,6 +281,35 @@ the next.
   written when the animal was in the main scene, so check how it walks the
   scene before trusting it; the animal is now drawn after the bloom, so a
   NaN in its shaders can no longer spread over the frame anyway.
+  **Organelles with parts, close up (2026-11-13, first try, awaiting
+  Felipe's verdict):** his idea: from a distance the cell stays as it was,
+  and coming closer the blobs gain parts, as a textbook draws them rather
+  than as they look in life. `makeDetail` in `web/src/main.js` adds, in the
+  same see-through style: pores, chromatin and nucleoli in the macronuclei
+  with sheets of rough reticulum beside them, a dense core in the
+  micronucleus, 52 mitochondria with cristae, 6 Golgi stacks with vesicles,
+  canals round the contractile vacuoles, prey and lysosomes at the food
+  vacuoles, a basket of rods in the head, and a basal body under every
+  cilium. All of it fades in with distance from the camera (`LOD_MID`: none
+  beyond 230 um, all there within 90; `LOD_NEAR` for the basal bodies), so
+  the default view is unchanged (checked by screenshot). One change shows at
+  any distance: the contractile vacuoles now pulse (`vacFill`: fill slowly,
+  empty at a stroke, every 4.6 and 6.1 s of the animal's time), and their
+  canals swell as they empty. All surfaces are one mesh and all dots one
+  point cloud (53,000 triangles, 4,800 points); each part rides at a fixed
+  place in the cell's frame. Placement is checked against the nuclei,
+  vacuoles and each other in straight-body coordinates. Cost: not
+  measurable in the test Chromium (39 to 47 fps close up with or without,
+  noisy); not measured in Firefox. `viewer.look(t, dist, az, el, along)`
+  sets up a close view for `web/check.sh` (`along` can be `'head'`).
+  Not done: the granule beads are as before and hide a good deal up close.
+  **Click to set the pivot (2026-11-13, his request):** a left click on the
+  animal (not a drag) slides the view until that spot is in the middle and
+  makes it the orbit pivot (`pick` in `web/src/main.js`). The click is
+  tested against the centreline rings on the CPU, with a margin for the
+  cilia. The pivot stays put; it does not follow the animal. A click on
+  open water does nothing. Checked with simulated clicks in the test
+  Chromium.
   To do: his `goals.txt` (flickering is crossed off there, see step 7):
   more complex organelles, other organisms (paramecium, algae
   with walls), removing the play controls, a GitHub project, hosting,
