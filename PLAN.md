@@ -192,6 +192,21 @@ the next.
   **Distance fix:** lines and tiny points are never drawn thinner than a
   pixel, so from far away the cilia added up to a star-like glow. Their
   brightness now falls with their real width on screen.
+  **Flicker fix (2026-11-13):** the whole screen went black for single
+  frames, mostly seen from above. Cause: `pow()` of a rim term (one minus
+  how much a surface faces the camera) that rounding pushes just below zero
+  where a surface faces the camera dead on. That gives a NaN pixel, and the
+  bloom smears one NaN over the whole frame. It was in the pellicle (so it
+  was there before the filaments, as Felipe remembered), the shells and the
+  thick filaments, which made it more frequent. Every such base is now
+  clamped: do the same in any new shader. Also redraws at once after a
+  quality drop. Measured with `~/microcosm-build/flicker.js` passed to
+  `web/check.sh`: it sweeps the camera, reads each frame back, and when one
+  is black hides objects in turn to name the culprit. Before: 2 black frames
+  in 4438 without the filaments, about 5 in 3000 with them; after: 0 in
+  9179. It drives the frames itself, because the covered test tab can drop
+  to about one animation frame a second. Chromium on the Intel chip only;
+  not tested in Firefox.
 
 - [ ] **8. Depth and surroundings.** In the web viewer.
   **Decision 2026-11-13: Cycles is dropped; the project is the interactive
@@ -223,11 +238,12 @@ the next.
   **Felipe's verdicts, 2026-11-13:** debris "look amazing now", thick
   filaments "looks good", thin filaments ok, and the stronger depth "is good
   now" (the first, weaker version he called still flat).
-  To do: his `goals.txt`, which lists flickering (not yet looked at: ask
-  him where he sees it), bigger debris, longer behaviour including the
-  animal moving (needs the tracker made robust beyond the 3.4 s stretch,
-  see step 4), other organisms (paramecium, algae), a GitHub project,
-  hosting, and sharing. Before anything is published: the repo ignores
+  To do: his `goals.txt` (flickering is crossed off there, see step 7): a
+  less glowy organism, longer behaviour including the animal moving (needs
+  the tracker made robust beyond the 3.4 s stretch, see step 4), behaviour
+  that loops, more complex organelles, other organisms (paramecium, algae
+  with walls), removing the play controls, a GitHub project, hosting,
+  making sure the Linode is safe once it is public, and sharing. Before anything is published: the repo ignores
   everything taken from the episode or the paper (see Rights), and the
   Oscillatoria do not sway or glide yet.
 

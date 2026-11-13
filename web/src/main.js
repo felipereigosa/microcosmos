@@ -241,9 +241,11 @@ function makePellicle() {
         return mix(c2, c3, (x - p2) / (1.0 - p2));
       }
       void main() {
-        vec3 n = normalize(cross(dFdx(vView), dFdy(vView)));
-        float facing = abs(dot(n, normalize(-vView)));
-        float e = pow(1.0 - facing, 1.6);
+        // every pow() base is clamped: rounding can push it just below zero, pow() then
+        // gives NaN, and the bloom smears one NaN pixel over the whole frame (a black flash)
+        vec3 cr = cross(dFdx(vView), dFdy(vView));
+        float facing = dot(cr, cr) > 0.0 ? abs(dot(normalize(cr), normalize(-vView))) : 1.0;
+        float e = pow(clamp(1.0 - facing, 0.0, 1.0), 1.6);
         vec3 edge = ramp4(e, 0.45, 0.82, vec3(0.004, 0.022, 0.034), vec3(0.03, 0.20, 0.27), vec3(0.30, 0.75, 0.80));
         vec3 band = ramp4(vGroove, 0.5, 0.88, vec3(0.0), vec3(0.015, 0.13, 0.15), vec3(0.05, 0.36, 0.34));
         float back = vFront > 0.0 ? 1.0 : 0.30;
@@ -438,7 +440,7 @@ function makeShell(o) {
       uniform vec3 uEdge, uCore; uniform float uStrength, uPow;
       in vec3 vN; in vec3 vView; out vec4 frag;
       void main() {
-        float f = 1.0 - abs(dot(normalize(vN), normalize(-vView)));
+        float f = clamp(1.0 - abs(dot(normalize(vN), normalize(-vView))), 0.0, 1.0);   // see the pellicle
         frag = vec4(mix(uCore, uEdge, pow(f, uPow)) * uStrength, 1.0);
       }`,
   });
@@ -653,7 +655,7 @@ function makeSurroundings() {
         float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
         void main() {
           float facing = dot(normalize(vN), normalize(-vV));
-          float f = 1.0 - abs(facing);
+          float f = clamp(1.0 - abs(facing), 0.0, 1.0);                                       // see the pellicle
           float c = vA.x / uCell, s = fract(c);
           float wall = smoothstep(0.0, 0.10, s) * (1.0 - smoothstep(0.90, 1.0, s));          // dark line between cells
           float grain = 0.72 + 0.28 * h(vec2(floor(vA.x * 2.2), floor(vA.y * 7.0))) + 0.12 * (h(vec2(floor(c), 3.0)) - 0.5);
@@ -853,7 +855,7 @@ function tick(now) {
   fpsAcc += dt; fpsN++;
   if (fpsAcc > 0.5) { stats.fps = fpsN / fpsAcc; stats.triangles = renderer.info.render.triangles; ui.fps.textContent = stats.fps.toFixed(0) + ' fps';
     slow = stats.fps < 38 ? slow + 1 : 0;
-    if (slow >= 4 && quality > 0.55) { quality *= 0.8; slow = 0; resize(); }
+    if (slow >= 4 && quality > 0.55) { quality *= 0.8; slow = 0; resize(); composer.render(); }   // redraw: a resized canvas may be cleared
     stats.quality = quality; fpsAcc = 0; fpsN = 0; }
   requestAnimationFrame(tick);
 }
