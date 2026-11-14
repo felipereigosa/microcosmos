@@ -226,11 +226,13 @@ function makeRaft(spec, common) {
     const r = b * k * Math.max(0, 1 - Math.abs(y / a) ** BOX) ** (1 / BOX) * rho;
     return [cellX(i) + r * Math.cos(ph), y, 0.94 * r * Math.sin(ph)];
   };
+  const marks = {};                                    // where the labels point (see partsOf in main.js): one cell for each
   for (let i = 0; i < n; i++) {
     const flip = rnd() < 0.5 ? -1 : 1, gp = gap[i];
     // the pyrenoid sits in the chloroplast, on the side away from its opening, in a sheath of starch plates
     const pr = 0.36 * b, pc = inside(i, flip * uni(0.08, 0.22) * a, 0.42, gp + Math.PI + uni(-0.5, 0.5));
     blob(pc, [pr, pr, pr], [0, 0, 0], PYR);
+    if (i === 0) marks.pyrenoid = pc;
     blob(pc, [pr * 0.45, pr * 0.45, pr * 0.45], [0, 0, 0], look([0.55, 0.80, 0.25], [0.05, 0.09, 0.01], 0.5, 1.2, 1));
     for (let k = 0; k < 9; k++) {
       const u = 2 * rnd() - 1, w = uni(0, TAU), s = Math.sqrt(1 - u * u), d = [s * Math.cos(w), s * Math.sin(w), u];
@@ -239,6 +241,7 @@ function makeRaft(spec, common) {
     // the nucleus on the open side, towards the other end; a Golgi stack beside it
     const nr = 0.40 * b, nc = inside(i, -flip * uni(0.18, 0.32) * a, 0.38, gp + uni(-0.4, 0.4));
     blob(nc, [nr, nr * 1.1, nr], [0, 0, 0], NUC);
+    if (i === Math.min(1, n - 1)) marks.nucleus = nc;
     blob([nc[0] + 0.25 * nr, nc[1], nc[2] - 0.2 * nr], [nr * 0.38, nr * 0.38, nr * 0.38], [0, 0, 0], NUCLEOLUS);
     const gw = uni(0, TAU);
     for (let k = 0; k < 4; k++) {
@@ -255,6 +258,7 @@ function makeRaft(spec, common) {
     }
     for (let k = 0; k < 14; k++) {                     // starch grains in the chloroplast, a few oil drops
       const oil = k < 3, p = inside(i, uni(-0.85, 0.85) * a, oil ? uni(0.2, 0.7) : uni(0.8, 1.02), uni(0, TAU));
+      if (k === 0 && i === Math.min(2, n - 1)) marks.stores = p;
       beads.push([...p, (oil ? uni(0.07, 0.12) : uni(0.04, 0.085)) * b, ...(oil ? [0.95, 0.70, 0.18] : [0.78, 0.90, 0.62])]);
     }
     // rosettes: a ring of 4 or 5 short tubes about 0.5 um across, here one near each pole on each face
@@ -318,7 +322,9 @@ function makeRaft(spec, common) {
   g.add(grains, chloro, parts, wall);
   g.children.forEach((o) => { o.frustumCulled = false; });
   g.matrixAutoUpdate = false;
-  g.userData = { spec, lod, radius: Math.hypot(a, (n * pitch) / 2) + 0.6 * spec.spine, cell: [a, b], triangles: (wallB.idx.length + chlB.idx.length + B.idx.length) / 3 };
+  marks.chloroplast = shape(n - 1, 0.6, 0, 0.8)[0]; marks.wall = shape(0, -0.5, Math.PI, 1)[0];
+  const mark = (key, v) => (marks[key] ? v.fromArray(marks[key]).applyMatrix4(g.matrix) : null);
+  g.userData = { spec, lod, mark, radius: Math.hypot(a, (n * pitch) / 2) + 0.6 * spec.spine, cell: [a, b], triangles: (wallB.idx.length + chlB.idx.length + B.idx.length) / 3 };
   return g;
 }
 

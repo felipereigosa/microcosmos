@@ -16,6 +16,8 @@ import { makeVorticella } from './vorticella.js';
 import { makeHalteria, SIZE as PREY, radiusAt as preyRadius } from './halteria.js';
 import { INFO } from './info.js';
 import { makeVR } from './vr.js';
+import { makeSound } from './sound.js';
+import { makeNeedle } from './needle.js';
 
 const N_PLEATS = 15;
 const NR = 720;            // rings along the cell
@@ -806,7 +808,7 @@ function makeDetail(food, roots) {
   });
 
   // mitochondria: bent capsules under the wall, cristae showing through
-  let made = 0;
+  let made = 0, mito = [20, 0.7, 0];
   for (let tries = 0; made < 52 && tries < 4000; tries++) {
     const sv = du(5, DATA.s_body - 7), hl = du(1.0, 1.7), rm = du(0.42, 0.58), R = rAt(sv);
     const y = R - 1.5 - rm - Math.abs(dgs()) * 2.2;
@@ -817,6 +819,7 @@ function makeDetail(food, roots) {
     const ax = [Math.cos(g), -Math.sin(g) * Math.sin(phi) + lean * Math.cos(phi), Math.sin(g) * Math.cos(phi) + lean * Math.sin(phi)];
     surf(10, 14, lathe((v) => -hl * Math.cos(Math.PI * v), (v) => rm * Math.pow(Math.max(0, Math.sin(Math.PI * v)), 0.55), du(-0.14, 0.14)),
       { at, rot: rotTo(ax, du(0, 6.28)), edge: [1.0, 0.36, 0.18], core: [0.07, 0.012, 0.006], strength: 0.42, pow: 1.7, kind: 1, param: hl, lod: LOD_MID });
+    if (!made) mito = [at.s, at.rho, at.phi];                         // the one a label points at
     taken.push([...q, hl * 0.8]);
     made++;
   }
@@ -994,6 +997,7 @@ function makeDetail(food, roots) {
   const grp = new THREE.Group();
   grp.add(mesh, dots, basket);
   grp.userData.count = { triangles: T.idx.length / 3, dots: D.pos.length / 3 };
+  grp.userData.mito = mito;
   return grp;
 }
 
@@ -1284,7 +1288,7 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.minDistance = 25;
-controls.maxDistance = 1800;
+controls.maxDistance = 110000;                     // far enough back to take in the whole needle (see needle.js)
 controls.target.set(15, -60, 0);
 
 const { pts: beads, food } = makeBeads();
@@ -1296,6 +1300,8 @@ const pellicle = makePellicle();
 const cilia = makeCilia();
 const surroundings = makeSurroundings();
 scene.add(surroundings, makeMotes());
+const needle = makeNeedle();                       // for scale: the water lies in its eye
+scene.add(needle.mesh);
 animal.add(pellicle, cilia, makeExtrusomes());
 const NUC = { edge: [0.90, 0.22, 0.62], core: [0.06, 0.005, 0.045], strength: 0.42 };
 const VAC = { edge: [0.55, 0.85, 1.0], core: [0, 0.003, 0.006], strength: 0.7, pow: 3.0 };
@@ -1433,7 +1439,12 @@ const follow = { anchor: null, off: new THREE.Vector3(), step: new THREE.Vector3
 function hitTest(x, y) {
   const rect = canvas.getBoundingClientRect();
   picker.setFromCamera(new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, 1 - ((y - rect.top) / rect.height) * 2), camera);
-  const O = picker.ray.origin, D = picker.ray.direction, perPx = (2 * Math.tan((camera.fov * Math.PI) / 360)) / rect.height;
+  return hitRay(picker.ray.origin, picker.ray.direction, (2 * Math.tan((camera.fov * Math.PI) / 360)) / rect.height);
+}
+// what a ray from O along D is on, if anything (the page's click, and the hand's ray in a
+// headset). perPx: the angle one pixel takes up, for the few pixels of leeway; t in what
+// comes back is how far along the ray it is.
+function hitRay(O, D, perPx) {
   let best = 0, hit = null;
   for (let i = 0; i < NR; i++) {
     const px = ringData[i * 4] - O.x, py = ringData[i * 4 + 1] - O.y, pz = ringData[i * 4 + 2] - O.z;
@@ -1441,13 +1452,13 @@ function hitTest(x, y) {
     if (t <= 0) continue;
     const d = Math.hypot(px - t * D.x, py - t * D.y, pz - t * D.z);
     const miss = d - ringData[i * 4 + 3] - Math.max(3, 10 * t * perPx);     // the cilia count, and so do a few pixels around
-    if (miss < best) { best = miss; hit = { kind: 'lacrymaria', ring: i }; }
+    if (miss < best) { best = miss; hit = { kind: 'lacrymaria', ring: i, t }; }
   }
   desmo.rafts.forEach((g, k) => {                      // the algae: near enough to a ball each
     const c = g.position.clone().sub(O), t = c.dot(D);
     if (t <= 0) return;
     const miss = c.addScaledVector(D, -t).length() - g.userData.radius * 0.7 - Math.max(2, 10 * t * perPx);
-    if (miss < best) { best = miss; hit = { kind: 'desmodesmus', k }; }
+    if (miss < best) { best = miss; hit = { kind: 'desmodesmus', k, t }; }
   });
   para.cells.forEach((g, k) => {                       // the paramecia: near enough to a rod each
     const [a, b] = g.userData.ends, R = g.userData.L * 0.11;
@@ -1455,29 +1466,29 @@ function hitTest(x, y) {
       const c = a.clone().lerp(b, i / 10).sub(O), t = c.dot(D);
       if (t <= 0) continue;
       const miss = c.addScaledVector(D, -t).length() - R - Math.max(3, 10 * t * perPx);
-      if (miss < best) { best = miss; hit = { kind: 'paramecium', k, u: i / 10 }; }
+      if (miss < best) { best = miss; hit = { kind: 'paramecium', k, u: i / 10, t }; }
     }
   });
   vort.cells.forEach((g, k) => g.userData.spots.forEach((sp, i) => {    // the vorticella: its bell, and spots along its stalk
     const c = sp.p.clone().sub(O), t = c.dot(D);
     if (t <= 0) return;
     const miss = c.addScaledVector(D, -t).length() - sp.r - Math.max(2, 8 * t * perPx);
-    if (miss < best) { best = miss; hit = { kind: 'vorticella', k, i }; }
+    if (miss < best) { best = miss; hit = { kind: 'vorticella', k, i, t }; }
   }));
   prey.cells.forEach((g, k) => {                       // the Halteria: a ball each
     if (!g.visible) return;
     const c = g.position.clone().sub(O), t = c.dot(D);
     if (t <= 0) return;
     const miss = c.addScaledVector(D, -t).length() - g.userData.radius - Math.max(2, 10 * t * perPx);
-    if (miss < best) { best = miss; hit = { kind: 'halteria', k }; }
+    if (miss < best) { best = miss; hit = { kind: 'halteria', k, t }; }
   });
-  surroundings.userData.tubes.forEach((g) => {         // the green filaments: lying still, so the spot is a fixed one
+  surroundings.userData.tubes.forEach((g, k) => {      // the green filaments: lying still, so the spot is a fixed one
     const ln = g.userData.line, R = g.userData.path[2];
     for (let i = 0; i < ln.length; i += 3) {
       const px = ln[i] - O.x, py = ln[i + 1] - O.y, pz = ln[i + 2] - O.z, t = px * D.x + py * D.y + pz * D.z;
       if (t <= 0) continue;
       const miss = Math.hypot(px - t * D.x, py - t * D.y, pz - t * D.z) - R - Math.max(1, 6 * t * perPx);
-      if (miss < best) { best = miss; hit = { kind: 'oscillatoria', p: [ln[i], ln[i + 1], ln[i + 2]] }; }
+      if (miss < best) { best = miss; hit = { kind: 'oscillatoria', k, i, p: [ln[i], ln[i + 1], ln[i + 2]], t }; }
     }
   });
   return hit;
@@ -1499,16 +1510,49 @@ function anchorOf(hit) {
     return v.set(ringData[i * 4] * (1 - w) + ringData[i * 4 + 4] * w, ringData[i * 4 + 1] * (1 - w) + ringData[i * 4 + 5] * w, ringData[i * 4 + 2] * (1 - w) + ringData[i * 4 + 6] * w);
   };
 }
+// what there is to say about it: the text, with the one figure that differs from one to the next filled in
+const infoFor = (hit) => (hit.kind !== 'desmodesmus' ? INFO[hit.kind]
+  : { ...INFO.desmodesmus, stats: INFO.desmodesmus.stats.map((s, i) => (i ? s : [String(desmo.rafts[hit.k].userData.spec.cells), s[1]])) });
+// A place in the Lacrymaria, as its shaders reckon it: s along the cell from the tail, rho
+// out from the centreline (1 is the skin), phi round it.
+function inCell(s, rho, phi, v) {
+  const f = Math.min(1, Math.max(0, s / common.uL.value)) * (NR - 1), i = Math.min(NR - 2, Math.floor(f)), w = f - i;
+  const g = (row, k) => ringData[(row * NR + i) * 4 + k] * (1 - w) + ringData[(row * NR + i + 1) * 4 + k] * w;
+  const N = [g(1, 0), g(1, 1), g(1, 2)], T = [g(2, 0), g(2, 1), g(2, 2)], r = g(0, 3) * rho, c = r * Math.cos(phi), sn = r * Math.sin(phi);
+  return v.set(g(0, 0) + c * N[0] + sn * (T[1] * N[2] - T[2] * N[1]), g(0, 1) + c * N[1] + sn * (T[2] * N[0] - T[0] * N[2]), g(0, 2) + c * N[2] + sn * (T[0] * N[1] - T[1] * N[0]));
+}
+const bigFood = food.reduce((a, b) => (b.r > a.r ? b : a));
+// The parts of an organism that a label can point at in a headset: for each line of its
+// "look closer" list, the name, the colour and where that part is just now (at(v) fills v
+// and returns it, or returns null while there is nothing to point at). The spots are
+// named in info.js and kept by each organism's module; the Lacrymaria's and the
+// filaments' are here.
+function partsOf(hit) {
+  let mark;
+  if (hit.kind === 'lacrymaria') {
+    const spot = { cilia: () => [0.3 * DATA.s_body, 1.12, 2.4], extrusomes: () => [common.uL.value - 7 * HS, 0.4, 1], nuclei: () => [NUCLEI[0].s, NUCLEI[0].rho, NUCLEI[0].phi],
+      vacuoles: () => [VACS[0].s, VACS[0].rho, VACS[0].phi], food: () => [bigFood.s, bigFood.rho, bigFood.phi], mito: () => detail.userData.mito };
+    mark = (key, v) => (spot[key] ? inCell(...spot[key](), v) : null);
+  } else if (hit.kind === 'oscillatoria') {
+    const g = surroundings.userData.tubes[hit.k], ln = g.userData.line, R = g.userData.path[2], i = Math.max(0, Math.min(ln.length - 6, hit.i));
+    const dir = new THREE.Vector3(ln[i + 3] - ln[i], ln[i + 4] - ln[i + 1], ln[i + 5] - ln[i + 2]).normalize(), side = new THREE.Vector3(0, 0, 1).cross(dir);
+    if (side.lengthSq() < 1e-4) side.set(1, 0, 0);
+    side.normalize();
+    const spot = { walls: [2.5 * R, 0.5 * R], sheath: [-2.5 * R, R], inside: [0, 0] };
+    mark = (key, v) => (spot[key] ? v.fromArray(hit.p).addScaledVector(dir, spot[key][0]).addScaledVector(side, spot[key][1]) : null);
+  } else mark = ({ desmodesmus: desmo.rafts, paramecium: para.cells, vorticella: vort.cells, halteria: prey.cells })[hit.kind][hit.k].userData.mark;
+  return INFO[hit.kind].look.filter((l) => l[3]).map(([color, name, what, key]) => ({ name, color, what: what[0].toUpperCase() + what.slice(1) + '.', at: (v) => mark(key, v) }));
+}
 const panel = document.getElementById('panel'), panelBody = document.getElementById('panelBody');
 function showPanel(hit) {
   document.body.classList.toggle('info', !!hit);
   panel.classList.toggle('off', !hit);
   if (!hit) return;
-  const d = INFO[hit.kind], el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+  const d = infoFor(hit), el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
   const stats = el('div', 'stats'), list = el('ul');
-  d.stats.forEach(([v, label], i) => {
+  d.stats.forEach(([v, label]) => {
     const s = el('div');
-    s.append(el('b', '', hit.kind === 'desmodesmus' && i === 0 ? String(desmo.rafts[hit.k].userData.spec.cells) : v), el('span', '', label));
+    s.append(el('b', '', v), el('span', '', label));
     stats.append(s);
   });
   for (const [c, name, what] of d.look) {
@@ -1526,6 +1570,10 @@ function select(hit) {
   follow.anchor = hit ? anchorOf(hit) : null;
   if (hit) follow.off.copy(controls.target).sub(follow.anchor(follow.step));
   showPanel(hit);
+  // in a headset: the tag stands on the spot that was picked, but the room rides with the
+  // body when that spot is on the Lacrymaria's neck, which whips about too much to ride on
+  const calm = hit && hit.kind === 'lacrymaria' && (hit.ring / (NR - 1)) * common.uL.value > DATA.s_body;
+  vr.select(hit ? { hit, info: infoFor(hit), anchor: follow.anchor, ride: calm ? (v) => v.fromArray(B.C) : follow.anchor, parts: partsOf(hit) } : null);
   return hit ? hit.kind : false;
 }
 const pick = (x, y) => select(hitTest(x, y));
@@ -1543,7 +1591,10 @@ window.addEventListener('keydown', (e) => { if (e.key === 'Escape') select(null)
 let vrNote = '';
 // in a headset (see vr.js) the page's camera, bloom and controls stand aside
 const vr = makeVR({ renderer, scene, animal, camera, controls, common, speed: { get: () => state.speed, set: setSpeed }, button: document.getElementById('vr'), onEnd: resize,
+  pick: (O, D) => hitRay(O, D, 0.0012), select: (hit) => select(hit),
   report: (text) => { vrNote = text; fpsEl.textContent = text; fpsEl.hidden = false; } });   // what the last visit was like, kept on the page
+
+const sound = makeSound(document.getElementById('sound'), 'music.mp3', () => vr.presenting());
 
 let last = performance.now(), fpsAcc = 0, fpsN = 0, slow = 0;
 const stats = { fps: 0, cilia: cilia.userData.count, triangles: 0, period: PERIOD };
@@ -1558,6 +1609,7 @@ function tick(now, frame) {
   state.clock += dt * state.speed;                    // the cilia keep beating through the loop
   common.uL.value = updateRings(state.t);
   common.uTime.value = state.clock;
+  needle.update(camera);
   desmo.update(state.t, camera);
   para.update(state.t, state.clock, camera);
   vort.update(state.t, state.clock, camera);
@@ -1585,6 +1637,13 @@ function tick(now, frame) {
     controls.target.add(follow.step); camera.position.add(follow.step);
   }
   controls.update();
+  {
+    // from far off the near and far limits of the view move out with it (the depth buffer
+    // cannot hold a micrometre and a tenth of a metre at once), and the wheel takes bigger steps
+    const dist = camera.position.distanceTo(controls.target), near = Math.max(2, 0.01 * dist), far = Math.max(6000, 6 * dist);
+    if (Math.abs(near - camera.near) > 0.02 * camera.near || far !== camera.far) { camera.near = near; camera.far = far; camera.updateProjectionMatrix(); }
+    controls.zoomSpeed = dist > 1500 ? 3 : 1;
+  }
   composer.render();
   fpsAcc += dt; fpsN++;
   if (fpsAcc > 0.5) { stats.fps = fpsN / fpsAcc; stats.triangles = renderer.info.render.triangles; fpsEl.textContent = stats.fps.toFixed(0) + ' fps' + (vrNote && ' · ' + vrNote);
@@ -1644,4 +1703,4 @@ function lookPrey(t, k, dist, az = -90, el = 40) {
   return true;
 }
 stats.planMs = planMs;
-window.viewer = { vr, mealPose, lookPrey, prey, meal, MEAL, MISS, FEED, SW, water, centre, lookVort, vort, look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
+window.viewer = { vr, sound, needle, partsOf, hitRay, mealPose, lookPrey, prey, meal, MEAL, MISS, FEED, SW, water, centre, lookVort, vort, look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };

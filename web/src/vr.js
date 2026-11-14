@@ -1,4 +1,5 @@
-// A first look at the scene from inside a headset (WebXR): no bloom, no panel, no slider.
+// The scene from inside a headset (WebXR): no bloom and no slider; pointing, labels and
+// the text are in vrui.js.
 //
 // The scene is in micrometres and its shaders expect an ordinary camera, so nothing in it
 // is scaled. Instead the headset is treated as a giant's: its eyes are put in the scene
@@ -7,7 +8,9 @@
 // turned (q: there is no up in the water, so any way will do) and S:
 //   left stick: fly where the head looks; right stick: sideways turns in steps, forward
 //     and back grows and shrinks the scene about a spot in front of the face
-// and the right hand, closed and moved left or right, sets the speed of the simulation.
+// The right hand points: its trigger picks the organism under the ray, which the room
+// then rides along with (open water lets go); closed on the grip and moved left or right
+// it sets the speed of the simulation.
 // It starts with the page's view straight ahead, so the slide stands like a window.
 //
 // The eyes are drawn into a half-float buffer of our own, as on the page, and that is
@@ -15,16 +18,24 @@
 // added up after tone mapping and wash out. The buffer's size is felt for (see tune): as
 // big as the headset's own if the frame rate holds, smaller only where smaller is faster.
 import * as THREE from 'three';
+import { makeVRUI } from './vrui.js';
 
-const FAR = 30000, NEAR_M = 0.04, S_MIN = 10, S_MAX = 3000;
+// S runs from the largest zoom to life size (a million micrometres to the metre), where
+// the needle is a needle in the hand and the water a speck in its eye
+const FAR = 30000, NEAR_M = 0.04, S_MIN = 10, S_MAX = 1e6;
 const FLY = 0.3, ZOOM = 1.5, SNAP = Math.PI / 6;     // m/s, e-folds/s, radians
 const SPEED = 2.5;                                   // of the simulation, for each metre the hand moves
+const RIDE = 0.35, LEAP = 150;                       // seconds to catch up with what is followed; micrometres in a frame that count as a jump, not a swim
 
-export function makeVR({ renderer, scene, animal, camera, controls, common, speed, button, report, onEnd }) {
+export function makeVR({ renderer, scene, animal, camera, controls, common, speed, button, report, onEnd, pick, select }) {
   const xr = renderer.xr;
   const nav = { origin: new THREE.Vector3(), q: new THREE.Quaternion(), S: 300, S0: 300, placed: false };
   const stats = { fps: 0, mean: 0, scale: 0.8, adapt: true, size: [0, 0], rate: 0, error: '', log: [] };
   let session = null, grab = null, armed = true, acc = 0, n = 0, total = 0, frames = 0, saved = null;
+  const ui = makeVRUI({ nav, pick, select });
+  // the hands, as last seen: where the right one points, where the left one is, and the trigger
+  const hands = { ray: false, p: new THREE.Vector3(), q: new THREE.Quaternion(), left: false, lp: new THREE.Vector3(), trigger: false, click: false };
+  const ride = { on: false, at: new THREE.Vector3(), lead: new THREE.Vector3() };
 
   const Y = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1);
   const Q = nav.q, R = new THREE.Quaternion(), P = new THREE.Vector3(), d0 = new THREE.Vector3();
@@ -38,20 +49,23 @@ export function makeVR({ renderer, scene, animal, camera, controls, common, spee
 
   const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
-    uniforms: { tDiffuse: { value: target.texture } }, depthTest: false, depthWrite: false,
-    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-    fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    uniforms: { tDiffuse: { value: target.texture }, uSize: { value: new THREE.Vector2(1, 1) } }, depthTest: false, depthWrite: false,
+    vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 uSize;
       float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       void main() {
-        gl_FragColor = vec4(texture2D(tDiffuse, vUv).rgb, 1.0);
+        gl_FragColor = vec4(texture2D(tDiffuse, gl_FragCoord.xy / uSize).rgb, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
         gl_FragColor.rgb += (h(gl_FragCoord.xy) + h(gl_FragCoord.yx + 7.3) - 1.0) / 255.0;
       }`,
   }));
-  quad.frustumCulled = false;
-  const quadScene = new THREE.Scene(), quadCam = new THREE.Camera();
-  quadScene.add(quad);
+  quad.frustumCulled = false; quad.renderOrder = -100;
+  // The water's picture goes onto the headset's buffer in the same pass as the ray, the
+  // panel and the card, as the first thing drawn for each eye (it finds its place in the
+  // picture from where it is on the buffer). As a pass of its own before theirs it cost the
+  // headset a quarter of its frames: its chip had to fetch the whole buffer back to draw on.
+  ui.scene.add(quad);
   const ports = [new THREE.Vector4(), new THREE.Vector4()];
   // On the page the organisms are a second scene drawn over the first. Here they go inside
   // it for the visit, in a group that is drawn after everything else, so that each frame
@@ -75,6 +89,7 @@ export function makeVR({ renderer, scene, animal, camera, controls, common, spee
 
   function move(frame, ref, dt) {
     let held = null;
+    hands.ray = hands.left = false;
     for (const src of session.inputSources) {
       const gp = src.gamepad;
       if (!gp) continue;
@@ -85,6 +100,8 @@ export function makeVR({ renderer, scene, animal, camera, controls, common, spee
           v.set(1, 0, 0).applyQuaternion(hq).multiplyScalar(x).addScaledVector(gaze, -y);
           nav.origin.addScaledVector(v.applyQuaternion(Q), FLY * Math.max(nav.S, nav.S0) * dt);
         }
+        const at = src.gripSpace && frame.getPose(src.gripSpace, ref);
+        if (at) { hands.lp.copy(at.transform.position); hands.left = true; }
         continue;
       }
       if (Math.abs(x) > 0.6 && armed) { toWorld(hp, w); Q.multiply(R.setFromAxisAngle(Y, -Math.sign(x) * SNAP)); pin(hp, w); armed = false; }
@@ -93,14 +110,31 @@ export function makeVR({ renderer, scene, animal, camera, controls, common, spee
         P.copy(hp).addScaledVector(gaze, 0.8);
         toWorld(P, w); nav.S = clampS(nav.S * Math.exp(y * ZOOM * dt)); pin(P, w);
       }
-      const pose = (gp.buttons[0]?.pressed || gp.buttons[1]?.pressed) && src.gripSpace && frame.getPose(src.gripSpace, ref);
+      const aim = src.targetRaySpace && frame.getPose(src.targetRaySpace, ref), pulled = !!gp.buttons[0]?.pressed;
+      if (aim) { hands.p.copy(aim.transform.position); hands.q.copy(aim.transform.orientation); hands.ray = true; }
+      if (pulled && !hands.trigger) hands.click = true;
+      hands.trigger = pulled;
+      const pose = gp.buttons[1]?.pressed && src.gripSpace && frame.getPose(src.gripSpace, ref);
       if (pose) held = P.copy(pose.transform.position);
     }
-    // the right hand, closed on a trigger or the grip, is a slider in the air: to the right
+    // the right hand, closed on the grip, is a slider in the air: to the right
     // the simulation runs faster, to the left slower, down to a stop
     if (held && !grab) grab = { from: held.clone(), right: new THREE.Vector3(-gaze.z, 0, gaze.x).normalize(), speed: speed.get() };
     else if (held) speed.set(grab.speed + v.copy(held).sub(grab.from).dot(grab.right) * SPEED);
     else grab = null;
+    // riding along with the organism that was picked: the room goes where it goes, a little
+    // behind, so that a lunge of its own is a glide here; a jump from one place to another
+    // (the eaten Halteria's spot passing to the one that ate it) is not followed
+    const sel = ui.selected();
+    if (!sel) ride.on = false;
+    else {
+      sel.ride(w);
+      if (!ride.on) { ride.at.copy(w); ride.lead.copy(w); ride.on = true; }
+      v.copy(w).sub(ride.at); ride.at.copy(w);
+      if (v.length() > LEAP) ride.lead.add(v);
+      v.copy(w).sub(ride.lead).multiplyScalar(1 - Math.exp(-dt / RIDE));
+      ride.lead.add(v); nav.origin.add(v);
+    }
   }
 
   // before the scene is updated: where the head is now, so that what depends on the
@@ -119,7 +153,8 @@ export function makeVR({ renderer, scene, animal, camera, controls, common, spee
         c.matrixWorld.compose(P, R.copy(Q).multiply(c.quaternion), ONE);
         c.matrixWorldInverse.copy(c.matrixWorld).invert();
         const e = c.projectionMatrix.elements;         // the headset's own, with the scene's near and far
-        e[10] = -(FAR + near) / (FAR - near); e[14] = (-2 * FAR * near) / (FAR - near);
+        const far = Math.max(FAR, 400 * nav.S);          // far enough to see the whole needle when it is small
+        e[10] = -(far + near) / (far - near); e[14] = (-2 * far * near) / (far - near);
         c.projectionMatrixInverse.copy(c.projectionMatrix).invert();
       }
       toWorld(hp, camera.position); camera.quaternion.copy(Q).multiply(hq);
@@ -143,11 +178,13 @@ export function makeVR({ renderer, scene, animal, camera, controls, common, spee
       renderer.setRenderTarget(target);
       renderer.render(scene, camera);
       cams.forEach((c, i) => c.viewport.copy(ports[i]));
-      xr.enabled = false;                              // one flat picture over both eyes, not one for each
+      // that picture, and over it the ray, the panel and the card at the headset's own sharpness
+      ui.update({ dt, head: hp, gaze, ray: hands.ray ? hands : null, left: hands.left ? hands.lp : null, click: hands.click });
+      hands.click = false;
+      quad.material.uniforms.uSize.value.set(out.width, out.height);
       renderer.setRenderTarget(out);
-      renderer.render(quadScene, quadCam);
-      xr.enabled = true;
-    } catch (e) { xr.enabled = true; fail(e); }
+      renderer.render(ui.scene, camera);
+    } catch (e) { fail(e); }
     acc += dt; n++; total += dt; frames++;
     if (acc >= 1) {
       stats.fps = n / acc; stats.mean = frames / total;
@@ -194,7 +231,7 @@ export function makeVR({ renderer, scene, animal, camera, controls, common, spee
     try {
       const s = await navigator.xr.requestSession('immersive-vr');
       saved = { position: camera.position.clone(), quaternion: camera.quaternion.clone() };
-      nav.placed = false; grab = null; acc = n = total = frames = 0;
+      nav.placed = false; grab = null; acc = n = total = frames = 0; ride.on = false; hands.trigger = hands.click = false;
       stats.log = []; Object.assign(feel, { floor: 0.4, ceil: 1, tried: null, wait: 0, calm: 0 });
       controls.enabled = false;
       guests.add(animal); scene.add(guests);
@@ -222,5 +259,5 @@ export function makeVR({ renderer, scene, animal, camera, controls, common, spee
     navigator.xr.isSessionSupported('immersive-vr').then((ok) => { button.hidden = !ok; }).catch(() => {});
     button.onclick = enter;
   }
-  return { begin, render, enter, nav, stats, presenting: () => !!session && xr.isPresenting, end: () => session && session.end() };
+  return { begin, render, enter, nav, stats, ui, hands, select: ui.show, presenting: () => !!session && xr.isPresenting, end: () => session && session.end() };
 }

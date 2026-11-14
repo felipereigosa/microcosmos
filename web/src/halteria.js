@@ -214,6 +214,7 @@ function makeCell(seed, common) {
   const free = (p, r) => taken.every((k) => len(sub(p, k)) > r + k[3]);
   // the macronucleus, oblong, lying across the middle; the micronucleus in a dent of it
   const mc = [xOf(-0.12), -1.2, 0.8];
+  const marks = { nucleus: mc, bristles: at(0.0, 1.9, 3.4), collar: at(0.86, 1.15, 4.6), stings: at(-0.97, 1, 0) };   // where the labels point (see partsOf in main.js)
   blob(mc, [3.6, 6.4, 3.8], [0.3, 0.2, 0.25], look([0.95, 0.30, 0.66], [0.05, 0.006, 0.036], 0.34));
   for (let e = -0.6; e <= 0.61; e += 0.6) taken.push([mc[0], mc[1] + e * 6.4, mc[2], 4.0]);
   for (let i = 0; i < 4; i++) blob(add(mc, [uni(-1.4, 1.4), -4.4 + 2.9 * i + uni(-0.4, 0.4), uni(-1.5, 1.5)]), [0.7, 1.25, 0.7], [0.3, 0.2, 0.25], look([1.0, 0.62, 0.78], [0.10, 0.035, 0.065], 0.28, 1.8, 1));   // its band-like nucleoli
@@ -222,6 +223,7 @@ function makeCell(seed, common) {
   taken.push([...mic, 1.5]);
   // the contractile vacuole: half way along, beside the mouth
   const vac = at(0.0, 0.66, 0.95);
+  marks.vacuole = vac;
   blob(vac, [2.5, 2.5, 2.5], [0, 0, 0], look([0.55, 0.85, 1.0], [0, 0.003, 0.006], 0.7, 3.0), 1);
   taken.push([...vac, 3.0]);
   // food vacuoles: bacteria and small algae, behind the mouth
@@ -231,6 +233,7 @@ function makeCell(seed, common) {
     if (!free(p, r)) continue;
     const g = rnd() < 0.6;
     blob(p, [r, r, r], [0, 0, 0], look(g ? [0.50, 0.90, 0.28] : [0.85, 0.62, 0.22], g ? [0.03, 0.06, 0.012] : [0.05, 0.03, 0.008], 0.36, 1.5));
+    if (!made) marks.food = p;
     taken.push([...p, r * 1.1]); made++;
   }
   // mitochondria, small and round, under the pellicle; close up only
@@ -311,7 +314,9 @@ function makeCell(seed, common) {
   g.add(grains, parts, sting, cilia, pellicle);
   g.traverse((q) => { q.frustumCulled = false; });
   g.matrixAutoUpdate = false;
-  g.userData = { U, radius: SIZE.b, cilia: roots.length, triangles: (pb.idx.length + B.idx.length) / 3, clock: null, vacPeriod: uni(5, 7), seed };
+  // in the scene; nothing once it is out of sight, and the stings only while they are in it
+  const mark = (key, v) => (!g.visible || !marks[key] || (key === 'stings' && U.uSting.value < 0.3) ? null : v.fromArray(marks[key]).applyMatrix4(g.matrix));
+  g.userData = { U, mark, radius: SIZE.b, cilia: roots.length, triangles: (pb.idx.length + B.idx.length) / 3, clock: null, vacPeriod: uni(5, 7), seed };
   return g;
 }
 

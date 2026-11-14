@@ -675,6 +675,11 @@ and there is lots of insect footage. Trade-offs:
 - If anything is published: credit the source ("motion based on footage by
   James Weiss / Journey to the Microcosmos") and preferably ask them first.
 - Third-party 3D models only with a licence that allows our use.
+- The music (`web/music.mp3`) is "Dreams Become Real" by Kevin MacLeod
+  (incompetech.com), CC BY 4.0: it may be published with the page, but only
+  with that credit somewhere a visitor can find it. For now it is in the
+  sound button's tooltip and in `src/sound.js`; put it in the README or on
+  the page when publishing.
 
 ## Machines
 
@@ -689,7 +694,7 @@ and there is lots of insect footage. Trade-offs:
 
 ## Layout
 
-- `web/`: the viewer. `src/main.js` (Lacrymaria, scenery, the loop), `src/desmodesmus.js` (the algae), `src/paramecium.js` (the paramecia), `src/vorticella.js` (the vorticella), `src/halteria.js` (the Halteria, prey), `template.html`,
+- `web/`: the viewer. `src/main.js` (Lacrymaria, scenery, the loop), `src/desmodesmus.js` (the algae), `src/paramecium.js` (the paramecia), `src/vorticella.js` (the vorticella), `src/halteria.js` (the Halteria, prey), `src/info.js` (the texts), `src/vr.js` and `src/vrui.js` (the headset), `src/sound.js` and `music.mp3` (the soundtrack), `template.html`,
   `build.mjs`, `check.sh`, `clipA.json` (the tracked clip: now used only
   for the cell's measurements and the box the scenery keeps clear), and the built
   `microcosm.html`. Packages are in `~/microcosm-build` on the Linode.
@@ -783,3 +788,123 @@ and there is lots of insect footage. Trade-offs:
   9334:localhost:9333 laptop` here, then `node ~/microcosm-build/quest.mjs
   '<js>' [shot.jpg]`. The reverse and the forward are lost when the Quest
   restarts or drops off adb.
+
+## In a headset: pointing, labels and a card (2026-11-14, built, not yet seen by Felipe)
+
+- His question: how to show the information in VR; a ray, a click and a
+  floating panel seemed like a lot of text to him. Offered: labels on the
+  organism itself, the full text on the wrist, narration. He chose the first
+  two.
+- `web/src/vrui.js`, driven from `vr.js`. A faint ray from the right hand;
+  where it meets an organism it brightens, a dot marks the spot and the name
+  floats by it. The **trigger** picks (open water lets go), through the same
+  `select()` as a click on the page, so the page's panel and the headset
+  agree. `hitTest` became `hitRay(O, D, perPx)` for this.
+- Picked: a name tag (kind, name, one line) over the spot, and a label on a
+  leader line for each line of the "look closer" list. Where each label
+  points is a named spot (fourth entry of each `look` line in `info.js`) kept
+  by the organism's module as `userData.mark(key, v)`; the Lacrymaria's and
+  the filaments' are in `partsOf` in `main.js`. Labels keep the same size to
+  the eye at any distance and sit at the depth of their part; they stand out
+  from the middle of the organism, are nudged apart, and fade in only once
+  the parts spread over 7 to 12 degrees of view (from far off, the tag only).
+- The whole text is a two-column card over the **left hand**, shown while
+  that hand is within 38 degrees of where the eyes look and nearer than
+  0.85 m: raise it to read, lower it and it is gone.
+- The room **rides along** with what was picked (`ride` in `vr.js`), 0.35 s
+  behind; on the Lacrymaria's neck it rides with the body instead, and a jump
+  of more than 150 micrometres in a frame is not followed. This is the part
+  most likely to need changing: at the largest zoom a swimming paramecium
+  carries the room along several times faster than his flying speed.
+- The speed slider in the air is now on the **grip** only, since the trigger
+  picks.
+- All of it is drawn in a pass of its own straight onto the headset's buffer
+  after the water: full sharpness whatever the water's buffer is scaled to,
+  and its own colours.
+- Checked in the emulator only (`~/microcosm-build/vrui_tour.sh`: picks each
+  kind of organism by aiming the emulated controller, screenshots in
+  `/tmp/vr_N.jpg`): pointing, picking, letting go, labels on all six kinds,
+  the card, riding with a swimming paramecium, leaving VR. Not checked: how
+  it reads and feels in the real headset, and its frame rate there.
+
+## Soundtrack (2026-11-14, built, not yet heard by Felipe, nor by me)
+
+- His request: something soothing and a bit eerie, found online, for the
+  feeling of swimming among alien creatures.
+- "Dreams Become Real" by Kevin MacLeod, CC BY 4.0 (see Rights): 6 min 44 s
+  of slow pads with no beat, chosen from ten of his ambient pieces and four
+  CC0 ones from OpenGameArt (those were 16 s to 2 min long, too short to loop
+  unnoticed) by description, length, loudness and spectrogram. I cannot
+  listen, so the choice is a guess for him to confirm; the other candidates
+  were "Ossuary 6 - Air" (eerier) and "Long Note Two" (barer).
+- `web/music.mp3`: trimmed of silence, levelled to -21 LUFS, 112 kbit/s,
+  5.7 MB. To try another piece, replace that file.
+- `src/sound.js`: an `<audio>` element (works from disk too), looping, faded
+  in at the first click, tap or key, at 0.55 of the file's level; a small
+  speaker button bottom right switches it and remembers. Paused while the tab
+  is hidden, except in a headset.
+
+### Changed after his first look (2026-11-14, same day)
+
+- **The music only played after switching it off and on.** It was started on
+  `pointerdown`, which browsers count as a gesture for a mouse but not for a
+  finger or a headset's pointer (there it is the release). `sound.js` now
+  listens for `pointerdown`, `pointerup`, `touchend`, `click` and `keydown`
+  and keeps trying until it plays. Not reproduced by me (his browser was not
+  named); check with him.
+- **No name while only pointing**: the ray still brightens and marks its spot,
+  nothing else shows until the trigger.
+- **Reorganised at his suggestion**: the tag became a fuller panel (kind,
+  name, line, the three figures, and the list of parts each with its colour);
+  the part labels are no longer all shown. Instead each part carries a small
+  ring in its colour (his question was how he would know what to point at:
+  the rings, and the list on the panel that names them); pointing at a ring
+  brings up that part's name and its line from "look closer", which stays
+  1.5 s after the ray leaves. Rings come in once the parts spread over 4 to
+  8 degrees. A trigger pull on a ring changes nothing.
+- **A thing for scale** (his idea: needle tip, hair, grain of rice, in the
+  shadows at the edge): recommended a human hair, about 70 micrometres
+  thick, with its cuticle scales; a needle (0.2 to 0.3 mm across even for
+  the finest) and a rice grain (6 mm) are bigger than most of the scene.
+  Waiting for his answer; nothing built.
+
+## The needle, for scale (2026-11-14, built, not yet seen by Felipe)
+
+- His idea, after a hair seemed too hard to make convincing: a sewing
+  needle, whole, with its **eye lying on a face of the box that holds the
+  water**, so that from behind it the scene is seen through the eye, and from
+  far off the whole needle shows how small the scene is.
+- `web/src/needle.js`. The water's box is the one the motes fill, 840 by 640
+  by 320 um. The eye (1.04 mm by 0.38 mm, rounded ends just clearing the
+  box's corners) lies on the **far long side**, y = +320: the side the page's
+  view looks towards. The near side was the other choice; there the default
+  camera would sit inside the steel of the head. So by default the head of
+  the needle is a dark shape behind the organisms; orbit round to look in
+  through the eye.
+- 45 mm long, 0.9 mm thick, head flattened to 0.46 mm, point 24 um across,
+  along +x. Two overlapping pieces (a bar bent round the eye, and the shaft).
+  Polished steel by a made-up reflection (a long light overhead, a window, a
+  horizon), with grinding marks round it. It is the only opaque thing in the
+  scene and writes depth, so it hides what is behind it, organisms included
+  (their pass shares the depth buffer). Its brightness falls to 0.07 while
+  the camera is within 0.9 mm of the middle and rises to 0.65 by 5.4 mm:
+  nearly black behind the organisms, steel from further off.
+- To see it whole: the page now zooms out to 110 mm (was 1.8 mm), with the
+  near and far planes moving out with the distance and bigger wheel steps
+  beyond 1.5 mm; in the headset the scale runs up to life size (`S_MAX` 1e6,
+  was 3000) and the far plane follows it.
+- Not clickable, and no text about it yet.
+
+### The headset's sharpness (2026-11-14)
+
+- He found the picture coarse again after the pointing and labels went in.
+  Read from the headset while he was in it: 34 fps at buffer scale 0.8, so
+  `tune()` had shrunk it to 0.49 (48 to 58 fps there). The pointing test
+  itself costs 0.34 ms on the Quest: not it. The cost was drawing the ray
+  and labels as a **second pass** onto the headset's buffer after the pass
+  that put the water's picture there.
+- Now one pass: the quad that carries the water's picture is the first
+  thing in the UI's scene and takes its place from `gl_FragCoord`. Checked in
+  the emulator for correctness only. **Read `viewer.vr.stats.log` after his
+  next visit** to see whether the scale stays up.
+

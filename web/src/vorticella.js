@@ -156,9 +156,12 @@ function makeCell(spec, common, flocs) {
   tube(funnel, (s) => 1.7 * (1 - 0.8 * s) + 0.25, 24, look([0.80, 0.78, 0.55], [0.012, 0.012, 0.006], 0.32, 2.2), 16);
   // food vacuoles, greener the newer, and mitochondria
   const inside = (u0, u1, k = 0.68) => { const u = uni(u0, u1), r = k * radiusAt(u, H) * Math.sqrt(rnd()), ph = uni(0, TAU); return [u * H, r * Math.cos(ph), r * Math.sin(ph)]; };
+  const marks = { wreath: [H, lipR, 0], funnel: funnel(0.45), nucleus: [0.8 * H, -1.2, 0] };   // where the labels point (see partsOf in main.js)
   for (let i = 0; i < 8; i++) {
     const age = rnd(), r = uni(1.1, 2.1) * (1 - 0.3 * age), edge = age < 0.5 ? [0.50 + 0.6 * age, 0.90 - 0.24 * age, 0.28] : [0.80, 0.78 - 0.6 * (age - 0.5), 0.25];
-    ball(inside(0.3, 0.8), r, r, r, look(edge, edge.map((x) => x * 0.03), 0.36, 2.2));
+    const fc = inside(0.3, 0.8);
+    if (!i) marks.food = fc;
+    ball(fc, r, r, r, look(edge, edge.map((x) => x * 0.03), 0.36, 2.2));
   }
   for (let i = 0; i < 26; i++) ball(inside(0.18, 0.9, 0.85), uni(0.9, 1.3), 0.38, 0.38, look([1.0, 0.40, 0.18], [0.07, 0.014, 0.006], 0.36, 1.7), 8, 6);
   const INNER_VERT = /* glsl */ `in vec3 aEdge, aCore; in vec2 aPar; out vec3 vN; out vec3 vV; out vec3 vEdge; out vec3 vCore; out vec2 vPar; uniform float uC;
@@ -267,7 +270,12 @@ function makeCell(spec, common, flocs) {
   g.quaternion.setFromUnitVectors(X, dir);
   g.updateMatrix();
   const spots = Array.from({ length: 9 }, () => ({ p: new THREE.Vector3(), r: 2 }));    // for clicking: the bell, then along the stalk
-  Object.assign(g.userData, { spec, U, pose, zooid, vac, spots, centre, H, lipR });
+  const mark = (key, v) => {                            // in the scene; the stalk's is half way along it
+    if (key === 'stalk') return v.copy(spots[4].p);
+    if (key === 'vacuole') return v.copy(vac.position).applyMatrix4(zooid.matrixWorld);
+    return marks[key] ? v.fromArray(marks[key]).applyMatrix4(zooid.matrixWorld) : null;
+  };
+  Object.assign(g.userData, { spec, U, pose, zooid, vac, spots, centre, H, lipR, mark });
   return g;
 }
 

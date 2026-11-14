@@ -296,7 +296,9 @@ function makeCell(spec, common) {
 
   // the macronucleus: a big bean at the middle, a little towards the back; the
   // micronucleus is a compact body pressed into its oral side
+  const marks = {};                                    // where the labels point (see partsOf in main.js)
   const rm = S.rmax, mc = S.at(0.50, 0.12, Math.PI), ma = 0.122 * L, mb = 0.43 * rm;
+  marks.nucleus = mc; marks.cilia = S.at(0.14, 1.06, 2.2);
   blob(mc, [ma, mb, mb * 1.08], [0, 0, 0.05], NUC);
   for (let e = -0.6; e <= 0.61; e += 0.3) taken.push([mc[0] + e * ma, mc[1], mc[2], mb * 1.1]);
   for (let i = 0; i < 16; i++) {                       // nucleoli, close up
@@ -335,6 +337,7 @@ function makeCell(spec, common) {
   for (let q = 0; q <= 16; q++) { const u = q / 16; gul.push(S.at(MOUTH - 0.012 + 0.125 * u, 0.80 - 0.62 * sstep(u * 1.15) + 0.1 * u * u, 0.1 * u)); }
   const gr = (u) => 0.030 * L * (1 - 0.55 * u) * (0.55 + 0.45 * sstep(u / 0.12));
   tube(gul, gr, GULLET, 12);
+  marks.gullet = gul[9];
   for (let k = 0; k < 3; k++) {
     const pts = gul.map((p, i) => { const u = i / 16, a = 2.2 + k * 0.75 + 2.4 * u; return add(p, [0, Math.cos(a), Math.sin(a)], gr(u) * 0.8); });
     tube(pts, () => 0.0042 * L, BAND, 5);
@@ -347,6 +350,7 @@ function makeCell(spec, common) {
     const xa = uni(0.05, 0.94), phi = uni(0, TAU), rr = S.rad(xa, phi), hl = uni(1.2, 2.0), p = S.at(xa, 1 - (2.6 + Math.abs(gauss()) * 1.6) / rr, phi);
     if (rr < 4 || !free(p, hl * 0.8)) continue;
     blob(p, [hl, uni(0.45, 0.6), uni(0.45, 0.6)], [uni(0, TAU), uni(-0.5, 0.5), uni(-0.6, 0.6)], MITO);
+    if (!made) marks.mito = p;
     taken.push([...p, hl * 0.7]); made++;
   }
   made = 0;
@@ -460,7 +464,13 @@ function makeCell(spec, common) {
   g.add(grains, parts, ...food, tricho, cilia, pellicle);
   g.traverse((q) => { q.frustumCulled = false; });
   g.matrixAutoUpdate = false;
-  g.userData = { spec, L: L * UNIT, U, vacs, food, routeAt, shape: S, cilia: roots.length, triangles: (pb.idx.length + B.idx.length) / 3 };
+  // in the scene, not in the cell; the food vacuole pointed at is the biggest one just now
+  const mark = (key, v) => {
+    if (key === 'vacuoles') return v.fromArray(vacs[0].c).applyMatrix4(g.matrix);
+    if (key === 'food') { let f = null; for (const q of food) if (q.visible && (!f || q.scale.x > f.scale.x)) f = q; return f ? v.copy(f.position).applyMatrix4(g.matrix) : null; }
+    return marks[key] ? v.fromArray(marks[key]).applyMatrix4(g.matrix) : null;
+  };
+  g.userData = { spec, mark, L: L * UNIT, U, vacs, food, routeAt, shape: S, cilia: roots.length, triangles: (pb.idx.length + B.idx.length) / 3 };
   return g;
 }
 
