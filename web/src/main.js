@@ -13,7 +13,7 @@ import DATA from '../clipA.json';
 import { makeDesmodesmus } from './desmodesmus.js';
 import { makeParamecia } from './paramecium.js';
 import { makeVorticella } from './vorticella.js';
-import { makeHalteria, SIZE as PREY } from './halteria.js';
+import { makeHalteria, SIZE as PREY, radiusAt as preyRadius } from './halteria.js';
 import { INFO } from './info.js';
 
 const N_PLEATS = 15;
@@ -103,9 +103,9 @@ function profiles(L, n) {
   // further apart.
   const base = r;
   if (SW.k > 0.02) {
-    const a = PREY.a * SW.k * 1.08, b = PREY.b * SW.k * 1.08;
+    // the lump has the prey's own outline (its back end is the one that goes in first), a little over size, so that no part of it shows through the skin
     let rp = new Float32Array(n);
-    for (let i = 0; i < n; i++) { const x = (i * ds - SW.sc) / a; if (Math.abs(x) < 1) rp[i] = b * Math.sqrt(1 - x * x); }
+    for (let i = 0; i < n; i++) { const w = preyRadius((i * ds - SW.sc) / (SW.k * 1.14)); if (w > 0) rp[i] = (w * 1.05 + 0.6) * SW.k; }
     rp = smoothArr(rp, 0.9 / ds);
     r = new Float32Array(n);
     for (let i = 0; i < n; i++) r[i] = Math.hypot(base[i], rp[i]);
@@ -140,13 +140,14 @@ const SITES = [
 ];
 // The meal, after the Halteria hunt in the episode (4:38 to 5:38; sheets of it in
 // references/feeding/): the head touches the prey and it stops dead (sting); the neck
-// draws it in (reel) and holds it at its tip, swinging about (hold); the cell closes
-// right up to it (close); the mouth stretches over the prey, the front of the cell
-// becoming a sack round it while the cell bends double (engulf); the lump moves back
-// into the body (carry) and the cell lies bent a while longer (rest) before the neck
-// comes out again. Seconds for each stage: in the footage hold is about 15 s and
-// engulf to rest about 30 s, so this runs at about twice life's pace.
-const FEED = { sting: 0.5, reel: 1.3, hold: 4.5, close: 1.6, engulf: 6, carry: 5, rest: 4,
+// draws it in part of the way (reel) and, after a moment (hold), the mouth stretches
+// over the prey there, at the end of the neck, the neck drawing in as it does, until
+// the front of the cell is a sack round the prey and the cell is bent double (engulf);
+// the lump moves back into the body (carry) and the cell lies bent a while longer (rest)
+// before the neck comes out again. In the footage the cell holds its prey at the tip
+// for some 15 s first; Felipe had that cut (2026-11-14), and close is no longer a stage
+// of its own. Engulf to rest is about 30 s in the footage, so about twice this.
+const FEED = { sting: 0.5, reel: 1.3, hold: 0.6, close: 0, engulf: 6, carry: 5, rest: 4,
   Lhold: 44, Lmin: 13, curl: 1.8, park: 48 };          // neck lengths while holding and when closed up, um; the bend, radians; where the lump ends up, um from the tail
 const keyed = (x, keys) => {                           // [time, value] pairs, eased from each to the next
   if (x <= keys[0][0]) return keys[0][1];
@@ -172,9 +173,9 @@ let PERIOD = 0, MEAL = null, MISS = null;
         const T = ['sting', 'reel', 'hold', 'close', 'engulf', 'carry', 'rest'].map((k) => (x += FEED[k]));   // when each stage ends
         const curl = -Math.sign(yaw) * FEED.curl;
         q.feed = { T,
-          ln: [[q.b, len], [T[0], len], [T[1], FEED.Lhold], [T[2], FEED.Lhold - 7], [T[3], FEED.Lmin], [T[4], FEED.Lmin - 5], [T[5], FEED.Lmin + 4], [T[6], NECK_REST]],
-          yaw: [[T[0], q.yaw], [T[1], 0.75 * q.yaw], [T[2], 0.4 * q.yaw], [T[3], 0.25 * q.yaw], [T[4], curl], [T[5], 0.75 * curl], [T[6], 0.15 * curl]],
-          pitch: [[T[0], q.pitch], [T[2], 0.5 * q.pitch], [T[4], -0.4 * q.pitch], [T[6], 0]] };
+          ln: [[q.b, len], [T[0], len], [T[1], FEED.Lhold], [T[3], FEED.Lhold - 4], [T[4], FEED.Lmin - 5], [T[5], FEED.Lmin + 4], [T[6], NECK_REST]],
+          yaw: [[T[0], q.yaw], [T[1], 0.75 * q.yaw], [T[3], 0.5 * q.yaw], [T[4], 0.55 * curl], [T[5], 0.75 * curl], [T[6], 0.15 * curl]],
+          pitch: [[T[0], q.pitch], [T[3], 0.6 * q.pitch], [T[4], -0.4 * q.pitch], [T[6], 0]] };
         q.c = x - 1.5; q.e = x; q.dips = 0;
         MEAL = q;
       }
@@ -270,7 +271,7 @@ function behave(t) {
 
 // where the prey is in all this, t being the time in the loop and L the cell's length
 function swallowAt(t, L) {
-  const T = MEAL.feed.T, A = PREY.a * 1.08;
+  const T = MEAL.feed.T, A = PREY.a * 1.16;
   SW.k = 0; SW.sc = L + A; SW.scale = 1; SW.fold = 0; SW.g = 0;
   if (t < T[3] || t >= MEAL.tDone) return;              // held at the tip, outside; or long gone
   if (t < T[4]) {                                       // the mouth passes over it, from its near pole to its far one
@@ -297,11 +298,11 @@ function centre(s, p, T, N) {
   return p;
 }
 // how the Lacrymaria has its prey at time t (after updateRings(t)), or null if it has none
-const HELD = { p: [0, 0, 0], T: [1, 0, 0], N: [0, 1, 0], since: 0, scale: 1, fade: 1, fold: 0 };
+const HELD = { p: [0, 0, 0], T: [1, 0, 0], N: [0, 1, 0], since: 0, scale: 1, fade: 1, fold: 0, cover: 0 };
 function mealPose(t) {
   if (t < MEAL.b || t >= MEAL.tGone) return null;
   centre(SW.sc, HELD.p, HELD.T, HELD.N);
-  HELD.since = t - MEAL.b; HELD.scale = SW.scale; HELD.fold = SW.fold; HELD.fade = 1 - sstep((t - (MEAL.feed.T[5] - 1.5)) / 2.5);
+  HELD.since = t - MEAL.b; HELD.cover = curL - SW.sc; HELD.scale = SW.scale; HELD.fold = SW.fold; HELD.fade = 1 - sstep((t - (MEAL.feed.T[5] - 1.5)) / 2.5);
   return HELD;
 }
 // the centreline at a time, as n points into X, Y, Z (not yet moved to where the body is: add the offset returned)
@@ -1349,7 +1350,7 @@ const water = {
 };
 vort.update(0, 0, camera);
 const mealPlace = (t, beyond) => { updateRings(t); return centre(curL + beyond, [0, 0, 0], [0, 0, 0], [0, 0, 0]); };
-const meal = { tJump: MISS.b - 0.22, tCatch: MEAL.b, tGone: MEAL.tGone, tBack: PERIOD - 11.5, A: mealPlace(MISS.b, PREY.a + 5), B: mealPlace(MEAL.b, PREY.a * 1.08) };
+const meal = { tJump: MISS.b - 0.22, tCatch: MEAL.b, tGone: MEAL.tGone, tBack: PERIOD - 11.5, A: mealPlace(MISS.b, PREY.a + 5), B: mealPlace(MEAL.b, PREY.a * 1.16) };
 meal.far = [meal.A[0] - 250, meal.A[1] + 120, meal.A[2] + 30];        // where its successor comes in from, out of the usual view
 const t0 = performance.now();
 const prey = makeHalteria(common, PERIOD, meal, water);
@@ -1634,4 +1635,4 @@ function lookPrey(t, k, dist, az = -90, el = 40) {
   return true;
 }
 stats.planMs = planMs;
-window.viewer = { lookPrey, prey, meal, MEAL, MISS, FEED, SW, water, centre, lookVort, vort, look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
+window.viewer = { mealPose, lookPrey, prey, meal, MEAL, MISS, FEED, SW, water, centre, lookVort, vort, look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };

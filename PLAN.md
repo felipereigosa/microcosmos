@@ -507,11 +507,13 @@ should he want it back; do not offer depth of field again unasked.
 At his request the slider no longer snaps to seven speeds: it runs smoothly
 from 0 (paused) to 2, and the label shows the speed with two decimals.
 
-## The Lacrymaria eats (built 2026-11-13, third session; Felipe has not seen it yet)
+## The Lacrymaria eats (built 2026-11-13; trimmed 2026-11-14; Felipe: Halteria "good", the meal "good enough")
 
-He asked for it "realistic", no corners cut, with the prey reddish. What was
-talked through beforehand is kept below ("As first talked through"); this is
-what was built, and where it differs.
+He asked for it "realistic", no corners cut, with the prey reddish. This is
+what was first built (commit a9efb78). What he changed after watching it is
+in the two sections that follow (the long hold cut, a jerkier rework
+rejected, the prey kept inside the skin); what was talked through beforehand
+is kept after those ("As first talked through").
 
 - **Footage first.** The episode has the whole thing: "hunting a Halteria",
   4:38 to 5:38. Sheets in `references/feeding/` (`halteria_0..2.jpg` the
@@ -543,7 +545,8 @@ what was built, and where it differs.
   `main.js`). At the first site the third throw (marked `'miss'`) goes for
   the victim, which jumps away 0.22 s before the head arrives; the fourth
   (`'feed'`) gets it. The prey's two places are worked out from where the
-  head will be, not the other way round. Stages and seconds: sting 0.5, reel
+  head will be, not the other way round. Stages and seconds (as first built;
+  see the second pass below for what changed): sting 0.5, reel
   1.3, hold 4.5, close 1.6, engulf 6, carry 5, rest 4: about 23 s, roughly
   twice life's pace. The cell's radius is `hypot(base, lump)`, so the skin
   tents over the prey and the body swells where the lump lies; while the
@@ -561,12 +564,45 @@ what was built, and where it differs.
   victim, also while it is held). Stills checked at the miss, the catch, the
   hold, the engulfing, the carry and the vacuole, close and in the default
   view. **Motion only he can judge**: the jump, the swing while holding, the
-  mouth passing over.
+  mouth passing over. He has since watched it: see the sections below.
 - **Open.** The fold is gentler than in the footage (`FEED.curl`). The
   bystanders seldom get scared (mostly bored jumps). The scene is busier by
   five red cells: he worried about that before. Click on a Halteria works
   (panel entry `halteria`); following one through a jump moves the view in
   a blink.
+
+### Second pass on the meal: rejected (2026-11-14)
+
+After watching the first version Felipe said the Halteria is good, but the
+meal brought the prey too close, sat too long with it before swallowing,
+should "take bites", be jerkier, and contort "almost like it's trying to knot
+itself up". He pointed to James Weiss's short "Single-Celled Organism Eats"
+(youtube.com/shorts/Jj0gqQeYEBw, the same hunt uncut; on the laptop as
+`feeding/short_Jj0gqQeYEBw.mp4`, sheets `references/feeding/short_*.jpg`).
+I built all of it (jabs with the sting threads drawn out between head and
+prey, a neck that flicked between kinked poses, a crook, a curling body).
+**He rejected it outright: "it looks bad, especially the pulling of those
+hairs from halteria".** It was never committed; do not rebuild it, and when he next asks for
+several changes of motion at once, make one, let him look, then the next. What he
+asked for instead, and what is in the tree now: the first version (commit
+a9efb78) with the long hold cut: grab, reel in part of the way (`Lhold` 44),
+and start the swallow there after 0.6 s, the neck drawing in as the mouth
+passes over (`FEED.hold` 0.6, `close` 0). Loop 65.3 s. All checks rerun and
+clear. `~/microcosm-build/knot.js` (does the cell pass through itself while
+eating) is kept; it reports 9.6 at worst.
+
+### The prey stays inside the skin (2026-11-14)
+
+Felipe: "good enough", but the Halteria poked out through the Lacrymaria's
+skin while swallowed. Three causes, all fixed: the lump was an ellipsoid and
+the Halteria is blunter (the lump now takes the prey's own outline,
+`radiusAt` in `halteria.js`, 5% and 0.6 over size and 14% longer); the bend of
+the cell where the rigid prey lies (the bend at the end of engulf is now 0.55
+of `curl`); and the prey's bristles and membranelles lying over the outside
+(each now folds, shrinks and fades as the mouth nears its foot, `uCover`).
+`~/microcosm-build/poke.js` (new) measures how far any swallowed point of the
+prey's skin stands outside: now 0.9 inside at worst, every second of the meal.
+Rerun it after changing the lump, the bend or the prey's shape.
 
 ### As first talked through (2026-11-13, before building)
 

@@ -61,6 +61,11 @@ const mouthAt = (c, phi) => {    // the mouth: a pocket running back from the co
   let dp = phi; dp -= TAU * Math.round(dp / TAU);
   return sstep((c + 0.15) / 0.3) * (1 - sstep((c - 0.62) / 0.2)) * Math.exp(-((dp / 0.5) ** 2));
 };
+// how wide the cell is x along its axis from its middle, in scene units (the mouth's pocket left out): for whoever swallows one
+export function radiusAt(x) {
+  const g = x / UNIT / AX - 0.114, c = g < 0.4 ? g : 0.4 + (g - 0.4) / 0.62;
+  return Math.abs(c) >= 1 ? 0 : HALF_WID * Math.pow(1 - c * c, 0.43) * UNIT;
+}
 const radOf = (c, phi) => HALF_WID * Math.pow(Math.max(0, 1 - c * c), 0.43) * (1 - 0.30 * mouthAt(c, phi));
 const at = (c, rho, phi) => { const r = rho * radOf(c, phi); return [xOf(c), r * Math.cos(phi), r * Math.sin(phi)]; };
 function frame(c, phi) {         // outward normal, and the way to the front along the surface
@@ -76,7 +81,7 @@ function makeCell(seed, common) {
   const gauss = () => Math.sqrt(-2 * Math.log(1 - rnd())) * Math.cos(TAU * rnd());
   // uLimp: stung, nothing beats any more. uFold: swallowed, everything lies flat. uFade: overall brightness.
   const U = { uLod: { value: 0 }, uPhase: { value: 0 }, uKick: { value: 0 }, uLimp: { value: 0 }, uFold: { value: 0 }, uFade: { value: 1 },
-    uSting: { value: 0 }, uPulse: { value: 1 }, uPx: common.uPx, uUnit: { value: UNIT } };
+    uSting: { value: 0 }, uCover: { value: -1e3 }, uPulse: { value: 1 }, uPx: common.uPx, uUnit: { value: UNIT } };
 
   // ---- pellicle
   const NX = 72, NP = 72, pb = new Builder({ aUV: 3 });
@@ -151,9 +156,13 @@ function makeCell(seed, common) {
     glslVersion: THREE.GLSL3, ...ADD, uniforms: U,
     vertexShader: /* glsl */ `
       in vec3 aNrm, aLean; in vec4 aInfo;
-      uniform float uPhase, uKick, uLimp, uFold, uPx;
-      out float vU; out float vGain; out float vKind;
+      uniform float uPhase, uKick, uLimp, uCover, uPx;
+      out float vU; out float vGain; out float vKind; out float vFold;
       void main() {
+        // uCover: how far along the cell the mouth of what is swallowing it has come. A cilium
+        // lies flat, shrinks and is gone as the mouth reaches its foot, so that nothing sticks out through the skin
+        float uFold = aInfo.w > 1.5 ? smoothstep(-10.0, -3.5, uCover - position.x) : smoothstep(-4.5, -0.5, uCover - position.x);   // the bristles, which trail back towards the mouth, go first
+        vFold = uFold;
         float q = aInfo.x, kind = aInfo.w, seg = aInfo.y / ${SEG}.0;
         vec3 n = aNrm, side = cross(n, aLean), p = position;
         for (int j = 1; j <= ${SEG}; j++) {
@@ -171,7 +180,7 @@ function makeCell(seed, common) {
             gam = live * 0.5 * cos(w) * u;
           }
           beta = min(beta, 1.75);
-          p += (cos(beta) * n + sin(beta) * (cos(gam) * aLean + sin(gam) * side)) * seg * (1.0 - 0.45 * uFold);
+          p += (cos(beta) * n + sin(beta) * (cos(gam) * aLean + sin(gam) * side)) * seg * (1.0 - 0.85 * uFold);
         }
         vU = q / ${SEG}.0; vKind = kind;
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -179,10 +188,10 @@ function makeCell(seed, common) {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */ `
-      precision highp float; in float vU; in float vGain; in float vKind; out vec4 frag; uniform float uFade, uFold;
+      precision highp float; in float vU; in float vGain; in float vKind; in float vFold; out vec4 frag; uniform float uFade;
       void main() {
         vec3 c = vKind > 1.5 ? ${SKIN.bristle} * (0.75 - 0.4 * vU) : mix(${SKIN.cil0}, ${SKIN.cil1}, vU);
-        frag = vec4(c * 0.7 * vGain * uFade * (1.0 - 0.7 * uFold), 1.0);
+        frag = vec4(c * 0.7 * vGain * uFade * (1.0 - vFold), 1.0);
       }`,
   }));
 
@@ -439,7 +448,7 @@ export function makeHalteria(common, period, meal, env) {
   function update(t, clock, camera, held) {
     for (const g of cells) {
       const ud = g.userData, U = ud.U;
-      let kick = poseAt(ud.plan, t, P, Q), scale = 1, fade = 1, limp = 0, fold = 0, sting = 0;
+      let kick = poseAt(ud.plan, t, P, Q), scale = 1, fade = 1, limp = 0, fold = 0, sting = 0, cover = -1e3;
       g.visible = true;
       if (ud.victim) {
         if (held) {
@@ -450,7 +459,7 @@ export function makeHalteria(common, period, meal, env) {
           if (held.since < 0.5) kick = Math.max(kick, Math.exp(-held.since / 0.12) * Math.abs(Math.sin(held.since * 55)));   // it tries to jump, and cannot
           Q.slerp(Qc, grip); P.fromArray(held.p);
           limp = sstep(held.since / 0.9); fold = held.fold; scale = held.scale; fade = held.fade;
-          sting = sstep(held.since / 0.25) * (1 - 0.6 * fold);
+          sting = sstep(held.since / 0.25) * (1 - fold); cover = held.cover / (UNIT * scale);
         } else if (t >= meal.tJump && t < meal.tCatch) P.lerp(Bm, 1 - sstep((meal.tCatch - t) / 1.5));   // it settles just where the head will find it
         else if (t >= meal.tCatch && t < meal.tBack) g.visible = false;
         else if (t >= meal.tBack) fade = sstep((t - meal.tBack) / 1.2);
@@ -461,7 +470,7 @@ export function makeHalteria(common, period, meal, env) {
       const dt = ud.clock === null ? 0 : Math.max(0, Math.min(0.2, clock - ud.clock));
       ud.clock = clock;
       U.uPhase.value = (U.uPhase.value + TAU * 13 * (1 - limp) * dt) % (TAU * 1000);
-      U.uKick.value = kick; U.uLimp.value = limp; U.uFold.value = fold; U.uFade.value = fade; U.uSting.value = sting;
+      U.uKick.value = kick; U.uLimp.value = limp; U.uFold.value = fold; U.uFade.value = fade; U.uSting.value = sting; U.uCover.value = cover;
       U.uLod.value = 1 - sstep((camera.position.distanceTo(P) - LOD[0]) / (LOD[1] - LOD[0]));
       const x = (((clock / ud.vacPeriod) % 1) + 1) % 1;   // the vacuole fills slowly and empties at a stroke
       U.uPulse.value = (0.15 + 0.85 * Math.cbrt(x < 0.88 ? sstep(x / 0.88) : 1 - sstep((x - 0.88) / 0.12))) * (1 - limp * 0.5);
