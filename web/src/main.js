@@ -15,6 +15,7 @@ import { makeParamecia } from './paramecium.js';
 import { makeVorticella } from './vorticella.js';
 import { makeHalteria, SIZE as PREY, radiusAt as preyRadius } from './halteria.js';
 import { INFO } from './info.js';
+import { makeVR } from './vr.js';
 
 const N_PLEATS = 15;
 const NR = 720;            // rings along the cell
@@ -1382,6 +1383,7 @@ composer.addPass(new ShaderPass({
 
 let quality = 1;                                     // render scale, lowered if the device struggles
 function resize() {
+  if (renderer.xr.isPresenting) return;             // the headset sets its own size
   const w = window.innerWidth, h = window.innerHeight;
   const pr = Math.min(window.devicePixelRatio, 2);
   renderer.setPixelRatio(pr);
@@ -1538,12 +1540,19 @@ window.addEventListener('keydown', (e) => { if (e.key === 'Escape') select(null)
   });
 }
 
+let vrNote = '';
+// in a headset (see vr.js) the page's camera, bloom and controls stand aside
+const vr = makeVR({ renderer, scene, animal, camera, controls, common, speed: { get: () => state.speed, set: setSpeed }, button: document.getElementById('vr'), onEnd: resize,
+  report: (text) => { vrNote = text; fpsEl.textContent = text; fpsEl.hidden = false; } });   // what the last visit was like, kept on the page
+
 let last = performance.now(), fpsAcc = 0, fpsN = 0, slow = 0;
 const stats = { fps: 0, cilia: cilia.userData.count, triangles: 0, period: PERIOD };
-function tick(now) {
+function tick(now, frame) {
   const raw = (now - last) / 1000;
   const dt = Math.min(0.1, raw);
   last = now;
+  const inVR = vr.presenting();
+  if (inVR) vr.begin(frame, dt);
   if (raw > 0.5) { fpsAcc = 0; fpsN = 0; slow = 0; }   // tab was hidden: not a slow device
   state.t = (state.t + dt * state.speed) % PERIOD;
   state.clock += dt * state.speed;                    // the cilia keep beating through the loop
@@ -1569,6 +1578,7 @@ function tick(now) {
     vacShells[i].material.uniforms.uRad.value = v.r * (0.3 + 0.7 * Math.cbrt(f));
     canalU.value[i] = 1.35 - 0.9 * f;
   });
+  if (inVR) { vr.render(raw); return; }
   if (follow.anchor) {                                // ride along with the chosen spot, the slide towards it easing out
     follow.off.multiplyScalar(Math.exp(-raw / 0.12));
     follow.anchor(follow.step).add(follow.off).sub(controls.target);
@@ -1577,13 +1587,12 @@ function tick(now) {
   controls.update();
   composer.render();
   fpsAcc += dt; fpsN++;
-  if (fpsAcc > 0.5) { stats.fps = fpsN / fpsAcc; stats.triangles = renderer.info.render.triangles; fpsEl.textContent = stats.fps.toFixed(0) + ' fps';
+  if (fpsAcc > 0.5) { stats.fps = fpsN / fpsAcc; stats.triangles = renderer.info.render.triangles; fpsEl.textContent = stats.fps.toFixed(0) + ' fps' + (vrNote && ' · ' + vrNote);
     slow = stats.fps < 38 ? slow + 1 : 0;
     if (slow >= 4 && quality > 0.55) { quality *= 0.8; slow = 0; resize(); composer.render(); }   // redraw: a resized canvas may be cleared
     stats.quality = quality; fpsAcc = 0; fpsN = 0; }
-  requestAnimationFrame(tick);
 }
-requestAnimationFrame(tick);
+renderer.setAnimationLoop(tick);
 const dbg = renderer.getContext().getExtension('WEBGL_debug_renderer_info');
 stats.gpu = dbg ? renderer.getContext().getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '';
 // for checking by screenshot: stop at time t and look at the body from dist um away
@@ -1635,4 +1644,4 @@ function lookPrey(t, k, dist, az = -90, el = 40) {
   return true;
 }
 stats.planMs = planMs;
-window.viewer = { mealPose, lookPrey, prey, meal, MEAL, MISS, FEED, SW, water, centre, lookVort, vort, look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
+window.viewer = { vr, mealPose, lookPrey, prey, meal, MEAL, MISS, FEED, SW, water, centre, lookVort, vort, look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };

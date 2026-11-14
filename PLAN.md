@@ -719,3 +719,67 @@ and there is lots of insect footage. Trade-offs:
   snap in motion (only stills were checked); snap when tapped or when the
   Lacrymaria or a paramecium comes near; the wreath's turn and a quarter into
   the funnel is drawn as closed rings; more than one, perhaps a cluster.
+
+## In a headset: a first look (2026-11-14, built, waiting for Felipe to try it on the Quest 2)
+
+- His request: a VR button, to see whether it runs on the Quest 2 and what it
+  looks like, with basic navigation; no menus or speed bar yet.
+- `web/src/vr.js`, wired into `main.js` (`viewer.vr`); the button "Enter VR"
+  shows only where the browser offers immersive VR. The loop now runs through
+  `renderer.setAnimationLoop`.
+- The scene is not scaled. The headset's eyes are placed in it as a giant's
+  (`nav.S` micrometres per metre, `nav.q`, `nav.origin`), with rigid view
+  matrices and the headset's own projection given the scene's near and far, so
+  every shader and `uPx` works as on the page.
+- Drawn into a half-float 4x buffer of our own and tone-mapped onto the
+  headset's (the composer does not work in WebXR; drawing straight to the
+  headset would add the see-through layers after tone mapping). No bloom. The
+  organisms' scene is put inside the surroundings' for the visit, in a group
+  with `renderOrder` 1, so a frame is one pass. The buffer starts at 0.8 of the
+  headset's size and shrinks by steps to 0.4 while the frame rate is under 90%
+  of the display's.
+- It starts with the page's view straight ahead, twice as big as on the page,
+  1.5 m away. Trigger or grip and drag pulls the water; both hands stretch and
+  turn it any way round; left stick flies where the head looks; right stick
+  turns in 30 degree steps and grows or shrinks the scene.
+- **Changed the same day after his first visit** ("really fantastic work"):
+  flying keeps its pace through the water when zoomed in (`max(S, S0)`), at a
+  third of the first speed (0.3 m/s at the starting size: 0.9 was too fast);
+  dragging and stretching with the hands is gone (he found the sticks
+  enough); the right hand closed on trigger or grip and moved right or left
+  sets the simulation speed, 2.5x per metre, with nothing shown. Read live from
+  the headset during that visit: 90 Hz display, 63 to 76 fps with the buffer
+  already at its floor of 0.4 (1152x634). Offered and not yet answered: aim for
+  72 instead of 90 to keep a sharper picture.
+- **After his second visit** (he found things pixelated from a distance, and
+  asked for VR to start at the maximum zoom): VR now starts at `S_MIN` (10
+  micrometres per metre, about 14 times bigger than before), from the same
+  spot and facing the same way, so the scene is some 20 m off and huge. The
+  session asks for 72 Hz. The buffer rule was naive (it had gone to 0.4 while
+  the headset still made only 63 to 76 fps, so pixels may not be the limit):
+  `tune()` now keeps a smaller buffer only if it was at least 8% faster, tries
+  bigger ones up to the headset's own size, and logs scale and fps each second
+  in `viewer.vr.stats.log`. Read that log after his next visit to learn what
+  limits the Quest. Not yet seen by him.
+- On leaving, the frame rate and buffer size of the visit are written top left
+  (and stay in `viewer.vr.stats`).
+- Checked: in the laptop's Chromium with Meta's emulator (`iwer`, as a Quest 2):
+  `node ~/microcosm-build/vrtest.mjs <url> /tmp/vr '<js>' ...`. Both eyes draw,
+  dragging, stretching, turning, flying and leaving work by the numbers. The
+  emulator says nothing about speed (its tab gets about one frame a second),
+  and with its Quest user agent three.js discards multisampled buffers on the
+  laptop, so the *page* loses its surroundings there: an artefact, not a bug.
+- On the real Quest 2 the page itself (not VR) ran at about 50 fps at 1280x670
+  with the bloom (Adreno 650; it has multisampled render-to-texture and
+  half-float buffers). VR on the headset: not yet seen by anyone.
+- Getting it onto the Quest without publishing: WebXR needs a secure page, and
+  `localhost` counts. The laptop serves `web/` on 127.0.0.1:8377 (user unit
+  `microcosm-vr`, started with `systemd-run --user`, gone at logout; stop with
+  `systemctl --user stop microcosm-vr`), and `adb reverse tcp:8377 tcp:8377`
+  on the Quest (192.168.100.247:5555 on the laptop's adb) makes
+  `http://localhost:8377/microcosm.html` work in its browser. To ask the page
+  on the headset things: `adb forward tcp:9333
+  localabstract:chrome_devtools_remote` on the laptop, `ssh -f -N -L
+  9334:localhost:9333 laptop` here, then `node ~/microcosm-build/quest.mjs
+  '<js>' [shot.jpg]`. The reverse and the forward are lost when the Quest
+  restarts or drops off adb.
