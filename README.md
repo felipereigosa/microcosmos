@@ -3,6 +3,8 @@
 A drop of pond water you can fly through: an interactive 3D simulation of
 microscopic life that runs in the browser, and in a VR headset.
 
+**See it live: https://felipereigosa.com/microcosmos.html**
+
 Microscope videos are wonderful but limited: one viewpoint, a shallow depth
 of field, one playback speed. This project fakes a perfect microscope, where
 everything is in focus, full of detail, and can be seen from any angle at any
@@ -27,9 +29,9 @@ appear, drawn the way a textbook draws them.
 
 ## Running it
 
-Download `web/microcosm.html` and open it in a browser. It is one
-self-contained file of about 900 KB. To hear the music, keep `web/music.mp3`
-next to it.
+Open https://felipereigosa.com/microcosmos.html, or download
+`web/microcosmos.html` and open it from disk. It is one self-contained file
+of about 900 KB. To hear the music, keep `web/music.mp3` next to it.
 
 | | |
 |---|---|
@@ -49,7 +51,7 @@ changes the speed.
 ## Building
 
 The source is in `web/src`; `web/build.mjs` bundles it with three.js into
-`web/microcosm.html`:
+`web/microcosmos.html`:
 
 ```
 mkdir ~/microcosm-build && cd ~/microcosm-build && npm i three esbuild
@@ -84,7 +86,7 @@ judged, Claude wrote the code.
   *eNeuro* 8 (2021).
 - Paramecium videos on Wikimedia Commons by Alexander Klepnev and Jon
   Houseman, used as reference for the motion.
-- [three.js](https://threejs.org) (MIT), bundled into `web/microcosm.html`.
+- [three.js](https://threejs.org) (MIT), bundled into `web/microcosmos.html`.
 
 ## License
 

@@ -1,4 +1,4 @@
-// Bundles the viewer into one self-contained file, web/microcosm.html, that
+// Bundles the viewer into one self-contained file, web/microcosmos.html, that
 // opens straight from disk. The packages live outside the synced folder:
 //   cd ~/microcosm-build && npm i three esbuild; node ~/microcosm/web/build.mjs
 import { createRequire } from 'node:module';
@@ -15,5 +15,5 @@ const out = await esbuild.build({
 });
 const js = out.outputFiles[0].text.replace(/<\/script/g, '<\\/script');
 const html = fs.readFileSync(path.join(here, 'template.html'), 'utf8').replace('/*BUNDLE*/', () => js);
-fs.writeFileSync(path.join(here, 'microcosm.html'), html);
-console.log('microcosm.html', (html.length / 1024).toFixed(0), 'KB');
+fs.writeFileSync(path.join(here, 'microcosmos.html'), html);
+console.log('microcosmos.html', (html.length / 1024).toFixed(0), 'KB');

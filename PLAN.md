@@ -1,4 +1,4 @@
-# Microcosm: a perfect microscope, faked
+# Microcosmos: a perfect microscope, faked
 
 ## The idea
 
@@ -17,7 +17,7 @@ stays honest by being driven by real footage:
   internal organelles, translucency) is built in Blender from scientific
   references, not recovered from the blurry footage.
 
-Output: **an interactive simulation in the browser** (`web/microcosm.html`,
+Output: **an interactive simulation in the browser** (`web/microcosmos.html`,
 three.js), to orbit, zoom and change speed freely. This was first planned as
 a later extra after Cycles animations; since 2026-11-13 it is the project, and
 Cycles rendering is dropped (see step 8). Felipe views it in Firefox on the
@@ -167,7 +167,7 @@ the next.
   interactive viewer. `blender/animate.sh` still works if a rendered clip is
   ever wanted; it lacks the depth and surroundings of step 8.
 - [x] **7. Interactive viewer, first version.** Done 2026-11-13, ahead of
-  step 6 at Felipe's request. `web/microcosm.html` is one self-contained
+  step 6 at Felipe's request. `web/microcosmos.html` is one self-contained
   file (750 KB, three.js and the tracked motion inside) that opens straight
   from disk. Not a baked export: the model is rebuilt on the GPU every
   frame from the tracked centreline (`web/src/main.js` is a port of
@@ -697,7 +697,7 @@ and there is lots of insect footage. Trade-offs:
 - `web/`: the viewer. `src/main.js` (Lacrymaria, scenery, the loop), `src/desmodesmus.js` (the algae), `src/paramecium.js` (the paramecia), `src/vorticella.js` (the vorticella), `src/halteria.js` (the Halteria, prey), `src/info.js` (the texts), `src/vr.js` and `src/vrui.js` (the headset), `src/sound.js` and `music.mp3` (the soundtrack), `template.html`,
   `build.mjs`, `check.sh`, `clipA.json` (the tracked clip: now used only
   for the cell's measurements and the box the scenery keeps clear), and the built
-  `microcosm.html`. Packages are in `~/microcosm-build` on the Linode.
+  `microcosmos.html`. Packages are in `~/microcosm-build` on the Linode.
 - `blender/`: `lacrymaria.py` (the reference model), `animate.py`, the
   `run.sh` and `animate.sh` wrappers, a saved `.blend` (not in git).
 - `tracking/`: `track.py`, `prepare.py`, `export_json.py`, `stats.py`,
@@ -782,7 +782,7 @@ and there is lots of insect footage. Trade-offs:
   `microcosm-vr`, started with `systemd-run --user`, gone at logout; stop with
   `systemctl --user stop microcosm-vr`), and `adb reverse tcp:8377 tcp:8377`
   on the Quest (192.168.100.247:5555 on the laptop's adb) makes
-  `http://localhost:8377/microcosm.html` work in its browser. To ask the page
+  `http://localhost:8377/microcosmos.html` work in its browser. To ask the page
   on the headset things: `adb forward tcp:9333
   localabstract:chrome_devtools_remote` on the laptop, `ssh -f -N -L
   9334:localhost:9333 laptop` here, then `node ~/microcosm-build/quest.mjs
@@ -908,3 +908,22 @@ and there is lots of insect footage. Trade-offs:
   the emulator for correctness only. **Read `viewer.vr.stats.log` after his
   next visit** to see whether the scale stays up.
 
+
+## Published (2026-11-14)
+
+- **Name:** the project is called Microcosmos since 2026-11-14 (Felipe's
+  choice): the page is `web/microcosmos.html`, its title is "Microcosmos".
+  Left as they were, on purpose: the project folder (`~/microcosm`, and
+  `~/Files/projects/microcosm` on the laptop), `~/microcosm-build`, the
+  Mutagen sync `microcosm`, the laptop's `microcosm-footage` folder and
+  `microcosm-vr` unit, and the text in `conversations/`.
+- **Code:** https://github.com/felipereigosa/microcosmos (public, branch
+  `main`, GPL-3.0). Pushed from the laptop (`ssh laptop`, in
+  `~/Files/projects/microcosm`): the Linode has no GitHub login for pushing.
+- **Page:** https://felipereigosa.com/microcosmos.html, with the music at
+  `/music.mp3`. nginx on the Linode serves a copy in `/var/www/microcosmos`
+  as two exact static paths; nothing else of the folder is reachable.
+  **After a rebuild, run `~/scripts/microcosmos-deploy.sh` to update it.**
+  HTTPS, so "Enter VR" works there directly on the Quest, with no adb.
+- Not asked before publishing: James Weiss / Journey to the Microcosmos
+  (see Rights). They are credited in the README and the info panels.

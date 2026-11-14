@@ -11,7 +11,7 @@ export function makeSound(button, src, busy = () => false) {
   const audio = new Audio();
   audio.loop = true; audio.preload = 'none'; audio.volume = 0; audio.src = src;
   let on = true, begun = false, timer = 0;
-  try { on = localStorage.getItem('microcosm.sound') !== 'off'; } catch (e) { /* no storage from disk in some browsers */ }
+  try { on = localStorage.getItem('microcosmos.sound') !== 'off'; } catch (e) { /* no storage from disk in some browsers */ }
   const show = () => { button.classList.toggle('off', !on); button.setAttribute('aria-pressed', String(on)); };
   function fade() {                                  // towards LEVEL or nothing, then stop the file if it is nothing
     clearInterval(timer);
@@ -34,7 +34,7 @@ export function makeSound(button, src, busy = () => false) {
   for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) window.addEventListener(ev, begin, true);
   button.addEventListener('click', () => {
     on = !on; begun = true;                            // from here on the button is in charge
-    try { localStorage.setItem('microcosm.sound', on ? 'on' : 'off'); } catch (e) { /* as above */ }
+    try { localStorage.setItem('microcosmos.sound', on ? 'on' : 'off'); } catch (e) { /* as above */ }
     show(); fade();
   });
   // not from a tab that has been put away, unless it is a headset that is being looked through

@@ -7,4 +7,4 @@ set -e
 laptop-chromium >/dev/null || { laptop-chromium; exit 1; }
 node ~/microcosm/web/build.mjs
 ssh laptop 'PATH=~/.local/bin:$PATH mutagen sync flush microcosm >/dev/null 2>&1'
-node ~/microcosm-build/shot.mjs file:///home/felipe/Files/projects/microcosm/web/microcosm.html /tmp/web "$@"
+node ~/microcosm-build/shot.mjs file:///home/felipe/Files/projects/microcosm/web/microcosmos.html /tmp/web "$@"
