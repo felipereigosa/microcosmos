@@ -507,7 +507,68 @@ should he want it back; do not offer depth of field again unasked.
 At his request the slider no longer snaps to seven speeds: it runs smoothly
 from 0 (paused) to 2, and the label shows the speed with two decimals.
 
-## Next: the Lacrymaria eats (talked through 2026-11-13, not started)
+## The Lacrymaria eats (built 2026-11-13, third session; Felipe has not seen it yet)
+
+He asked for it "realistic", no corners cut, with the prey reddish. What was
+talked through beforehand is kept below ("As first talked through"); this is
+what was built, and where it differs.
+
+- **Footage first.** The episode has the whole thing: "hunting a Halteria",
+  4:38 to 5:38. Sheets in `references/feeding/` (`halteria_0..2.jpg` the
+  minute at 1.5 fps, `halteria_zoom_0..2.jpg` the animal close). What it
+  shows, and it is not what was imagined: the head touches the prey and it
+  stops; the neck shortens at once to about a body length and holds the prey
+  at its tip for some 15 s; then the cell closes right up, the mouth stretches
+  over the prey, and the cell sits bent double for half a minute with the prey
+  as a lump in its front end, as wide as the body; then it straightens and the
+  neck comes out. **No lump travels down a long neck**: the neck is drawn in
+  first.
+- **The prey is Halteria, not Cyclidium**, because that is what the footage
+  shows being eaten. `web/src/halteria.js`: a globe 26 by 23 um (15 by 13.5
+  scene units at the paramecia's `UNIT`, so about twice the head, as agreed),
+  red skin, a collar of 15 membranelles and 7 in the mouth, 7 groups of 3
+  long bristles, macronucleus, micronucleus, contractile vacuole, food
+  vacuoles, grains; mitochondria and fine lines close up. Numbers from
+  Wikipedia and the atlases it cites; no paper read, no photo fetched (the
+  download from Commons was blocked by the permission classifier; ask Felipe
+  if a reference photo is wanted). Jump speed and length are from memory.
+- **Five of them.** Four bystanders (`HOMES`) are not scripted: at load,
+  `planJumps` samples everything that moves over the loop (`water.world` in
+  `main.js`: the Lacrymaria through the cheap `spine`, the paramecia, the
+  algae, the vorticella) and has each cell jump to a clear spot when
+  something is about to come within 30, or every 5 to 11 s out of boredom,
+  and be home by the end of the loop. About 0.3 s at load. The fifth is the
+  victim.
+- **The meal** (`FEED`, `MEAL`, `MISS`, `swallowAt`, `mealPose` in
+  `main.js`). At the first site the third throw (marked `'miss'`) goes for
+  the victim, which jumps away 0.22 s before the head arrives; the fourth
+  (`'feed'`) gets it. The prey's two places are worked out from where the
+  head will be, not the other way round. Stages and seconds: sting 0.5, reel
+  1.3, hold 4.5, close 1.6, engulf 6, carry 5, rest 4: about 23 s, roughly
+  twice life's pace. The cell's radius is `hypot(base, lump)`, so the skin
+  tents over the prey and the body swells where the lump lies; while the
+  prey is half in, the tube simply ends in the rim of the mouth. Pleats are
+  laid out on the unswollen cell so they do not spin as the lump passes.
+  After the carry the prey fades into a red food vacuole (`bolus`) that
+  shrinks and browns until 14 s before the loop ends. A successor comes in
+  from out of view (`meal.far`) in three jumps from 11.5 s before the end.
+- **The loop is now 70.8 s** of the animal's time (was 50), so about 280 s at
+  the default speed. The other organisms' rounds stretched with it.
+- **Checks.** `~/microcosm-build/prey.js` (new), passed to `web/check.sh`:
+  each Halteria's least room from moving things, flocs and filaments, its
+  jumps and why, the seam. `clearance.js`, `para.js`, `algae.js` rerun: all
+  clear. `viewer.lookPrey(t, k, dist, az, el)` frames Halteria k (4 is the
+  victim, also while it is held). Stills checked at the miss, the catch, the
+  hold, the engulfing, the carry and the vacuole, close and in the default
+  view. **Motion only he can judge**: the jump, the swing while holding, the
+  mouth passing over.
+- **Open.** The fold is gentler than in the footage (`FEED.curl`). The
+  bystanders seldom get scared (mostly bored jumps). The scene is busier by
+  five red cells: he worried about that before. Click on a Halteria works
+  (panel entry `halteria`); following one through a jump moves the view in
+  a blink.
+
+### As first talked through (2026-11-13, before building)
 
 Felipe asked how hard it would be to add a few smallish things for the
 Lacrymaria to eat, realistically. Agreed so far, in talk only; he wants two
@@ -592,7 +653,7 @@ and there is lots of insect footage. Trade-offs:
 
 ## Layout
 
-- `web/`: the viewer. `src/main.js` (Lacrymaria, scenery, the loop), `src/desmodesmus.js` (the algae), `src/paramecium.js` (the paramecia), `src/vorticella.js` (the vorticella), `template.html`,
+- `web/`: the viewer. `src/main.js` (Lacrymaria, scenery, the loop), `src/desmodesmus.js` (the algae), `src/paramecium.js` (the paramecia), `src/vorticella.js` (the vorticella), `src/halteria.js` (the Halteria, prey), `template.html`,
   `build.mjs`, `check.sh`, `clipA.json` (the tracked clip: now used only
   for the cell's measurements and the box the scenery keeps clear), and the built
   `microcosm.html`. Packages are in `~/microcosm-build` on the Linode.

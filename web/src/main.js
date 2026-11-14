@@ -13,6 +13,7 @@ import DATA from '../clipA.json';
 import { makeDesmodesmus } from './desmodesmus.js';
 import { makeParamecia } from './paramecium.js';
 import { makeVorticella } from './vorticella.js';
+import { makeHalteria, SIZE as PREY } from './halteria.js';
 import { INFO } from './info.js';
 
 const N_PLEATS = 15;
@@ -67,6 +68,9 @@ const gauss = () => Math.sqrt(-2 * Math.log(1 - rnd())) * Math.cos(2 * Math.PI *
 const HEAD_D = HEAD.map((h) => h[0]), HEAD_R = HEAD.map((h) => h[1]);
 const BODY_S = DATA.r_body.map((_, i) => i);
 
+// what it is swallowing, if anything: a lump the size of the prey times k, centred sc from the tail
+// (beyond the cell's length while the prey is still outside); see "the meal" below
+const SW = { k: 0, sc: 0, scale: 1, fold: 0, g: 0 };
 // radius and helix angle along a cell of length L, sampled at n points
 function profiles(L, n) {
   const ds = L / (n - 1);
@@ -93,7 +97,20 @@ function profiles(L, n) {
     theta[i] = (20 + 54 * sstep(x) ** 0.8 + 22 * Math.exp(-(((d - 10 * HS) / (5 * HS)) ** 2))) * Math.PI / 180;
   }
   theta = smoothArr(theta, 3 / ds);
-  return { r, theta, ds };
+  // A meal going down: the skin is stretched over it, and where the meal is still half
+  // outside, the cell simply ends in the rim of its mouth, wide open on the prey. The
+  // pleats keep their places (they are laid out on the cell as it was, base), only
+  // further apart.
+  const base = r;
+  if (SW.k > 0.02) {
+    const a = PREY.a * SW.k * 1.08, b = PREY.b * SW.k * 1.08;
+    let rp = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = (i * ds - SW.sc) / a; if (Math.abs(x) < 1) rp[i] = b * Math.sqrt(1 - x * x); }
+    rp = smoothArr(rp, 0.9 / ds);
+    r = new Float32Array(n);
+    for (let i = 0; i < n; i++) r[i] = Math.hypot(base[i], rp[i]);
+  }
+  return { r, base, theta, ds };
 }
 
 const ringData = new Float32Array(NR * 3 * 4);
@@ -113,14 +130,31 @@ const smoother = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * x * (x
 const NECK_REST = 28, NECK_SWIM = 15, S_REF = 30;   // um; S_REF is the point of the body that the path moves
 // where it stops: place, heading on arrival and on leaving (it turns while it hunts),
 // pitch likewise, then the throws of the neck: yaw and pitch from the body's axis in
-// degrees, neck length in um, time spent feeling around in s, hook at the tip in degrees
+// degrees, neck length in um, time spent feeling around in s, hook at the tip in degrees.
+// A throw marked 'miss' goes for a Halteria that jumps away just before the head gets
+// there; the one marked 'feed' catches it (see "the meal").
 const SITES = [
-  { p: [95, -8, 5], yaw: [180, 196], pitch: [6, 2], bouts: [[24, 22, 150, 0.8, 30], [-62, 4, 100, 0.0, -20], [8, 40, 186, 2.1, -45], [70, -20, 88, 0.5, 25]] },
+  { p: [95, -8, 5], yaw: [180, 196], pitch: [6, 2], bouts: [[24, 22, 150, 0.8, 30], [-62, 4, 100, 0.0, -20], [14, 8, 140, 1.8, -30, 'miss'], [70, -20, 88, 0, 25, 'feed']] },
   { p: [-160, -55, 48], yaw: [205, 325], pitch: [10, -14], bouts: [[-35, -25, 120, 0.6, -30], [22, 14, 150, 1.6, 40], [-80, 30, 95, 0.0, 15], [15, -40, 140, 1.0, -35]] },
   { p: [125, -128, -45], yaw: [350, 462], pitch: [-12, 16], bouts: [[40, 30, 135, 0.9, 35], [5, 14, 172, 1.9, -30], [85, 45, 110, 0.4, 20]] },
 ];
+// The meal, after the Halteria hunt in the episode (4:38 to 5:38; sheets of it in
+// references/feeding/): the head touches the prey and it stops dead (sting); the neck
+// draws it in (reel) and holds it at its tip, swinging about (hold); the cell closes
+// right up to it (close); the mouth stretches over the prey, the front of the cell
+// becoming a sack round it while the cell bends double (engulf); the lump moves back
+// into the body (carry) and the cell lies bent a while longer (rest) before the neck
+// comes out again. Seconds for each stage: in the footage hold is about 15 s and
+// engulf to rest about 30 s, so this runs at about twice life's pace.
+const FEED = { sting: 0.5, reel: 1.3, hold: 4.5, close: 1.6, engulf: 6, carry: 5, rest: 4,
+  Lhold: 44, Lmin: 13, curl: 1.8, park: 48 };          // neck lengths while holding and when closed up, um; the bend, radians; where the lump ends up, um from the tail
+const keyed = (x, keys) => {                           // [time, value] pairs, eased from each to the next
+  if (x <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) if (x <= keys[i][0]) return keys[i - 1][1] + (keys[i][1] - keys[i - 1][1]) * smoother((x - keys[i - 1][0]) / (keys[i][0] - keys[i - 1][0]));
+  return keys[keys.length - 1][1];
+};
 const BOUTS = [], SEGS = [];
-let PERIOD = 0;
+let PERIOD = 0, MEAL = null, MISS = null;
 {
   const rb = mulberry(99);
   const dirOf = (yaw, pitch) => [Math.cos(pitch * RAD) * Math.cos(yaw * RAD), Math.cos(pitch * RAD) * Math.sin(yaw * RAD), Math.sin(pitch * RAD)];
@@ -128,11 +162,24 @@ let PERIOD = 0;
   SITES.forEach((site, k) => {
     const hunt = { type: 'hunt', site, t0: t };
     t += 0.6;
-    for (const [yaw, pitch, len, dwell, hook] of site.bouts) {
+    for (const [yaw, pitch, len, dwell, hook, kind] of site.bouts) {
       const ext = 0.45 + len / 260, ret = 0.4 + len / 330;
-      BOUTS.push({ a: t, b: t + ext, c: t + ext + dwell, e: t + ext + dwell + ret, yaw: yaw * RAD, pitch: pitch * RAD, hook: hook * RAD, len,
-        dips: Math.round(dwell / 0.75), dip: 0.18 + 0.2 * rb() });
-      t += ext + dwell + ret + 0.45 + 0.6 * rb();
+      const q = { a: t, b: t + ext, c: t + ext + dwell, e: t + ext + dwell + ret, yaw: yaw * RAD, pitch: pitch * RAD, hook: hook * RAD, len,
+        dips: Math.round(dwell / 0.75), dip: 0.18 + 0.2 * rb() };
+      if (kind === 'miss') MISS = q;
+      if (kind === 'feed') {
+        let x = q.b;
+        const T = ['sting', 'reel', 'hold', 'close', 'engulf', 'carry', 'rest'].map((k) => (x += FEED[k]));   // when each stage ends
+        const curl = -Math.sign(yaw) * FEED.curl;
+        q.feed = { T,
+          ln: [[q.b, len], [T[0], len], [T[1], FEED.Lhold], [T[2], FEED.Lhold - 7], [T[3], FEED.Lmin], [T[4], FEED.Lmin - 5], [T[5], FEED.Lmin + 4], [T[6], NECK_REST]],
+          yaw: [[T[0], q.yaw], [T[1], 0.75 * q.yaw], [T[2], 0.4 * q.yaw], [T[3], 0.25 * q.yaw], [T[4], curl], [T[5], 0.75 * curl], [T[6], 0.15 * curl]],
+          pitch: [[T[0], q.pitch], [T[2], 0.5 * q.pitch], [T[4], -0.4 * q.pitch], [T[6], 0]] };
+        q.c = x - 1.5; q.e = x; q.dips = 0;
+        MEAL = q;
+      }
+      BOUTS.push(q);
+      t = q.e + 0.45 + 0.6 * rb();
     }
     hunt.t1 = t;
     SEGS.push(hunt);
@@ -144,6 +191,8 @@ let PERIOD = 0;
     t = SEGS[SEGS.length - 1].t1;
   });
   PERIOD = t;
+  MEAL.tGone = MEAL.feed.T[5] + 1;                     // the prey is a food vacuole from here on
+  MEAL.tDone = PERIOD - 14;                            // and digested by here
 }
 // smooth noise that repeats exactly every PERIOD: a few sines at whole multiples of the loop
 function loopNoise(seed, hzLo, hzHi) {
@@ -164,15 +213,20 @@ function neckAt(t, out) {
   for (let i = 0; i < n; i++) if (BOUTS[i].a <= t) j = i;
   const q = BOUTS[j], nx = BOUTS[(j + 1) % n];
   const tt = t < q.a ? t + PERIOD : t;                          // before the first throw: still after the last one
-  let env = 0;
-  if (tt < q.b) env = smoother((tt - q.a) / (q.b - q.a));
+  let env = 0, yaw = q.yaw, pitch = q.pitch, hook = q.hook;
+  out.Ln = -1;
+  if (q.feed && tt >= q.b) {                            // it has caught something: the neck is told its length outright
+    out.Ln = keyed(tt, q.feed.ln);
+    env = Math.min(1, Math.max(0, (out.Ln - NECK_REST) / (q.len - NECK_REST)));
+    yaw = keyed(tt, q.feed.yaw); pitch = keyed(tt, q.feed.pitch); hook *= 1 - sstep((tt - q.b) / 0.4);
+  } else if (tt < q.b) env = smoother((tt - q.a) / (q.b - q.a));
   else if (tt < q.c) env = 1 - (q.dips ? q.dip * (0.5 - 0.5 * Math.cos((2 * Math.PI * q.dips * (tt - q.b)) / (q.c - q.b))) : 0);
   else if (tt < q.e) env = 1 - smoother((tt - q.c) / (q.e - q.c));
   const x0 = 0.5 * (q.c + q.e), x1 = nx.a + (nx.a < q.a ? PERIOD : 0);
   const m = smoother((tt - x0) / (x1 - x0));
   out.env = env;
   out.len = q.len;
-  out.yaw = q.yaw + (nx.yaw - q.yaw) * m; out.pitch = q.pitch + (nx.pitch - q.pitch) * m; out.hook = q.hook + (nx.hook - q.hook) * m;
+  out.yaw = yaw + (nx.yaw - yaw) * m; out.pitch = pitch + (nx.pitch - pitch) * m; out.hook = hook + (nx.hook - hook) * m;
 }
 const B = { C: [0, 0, 0], e1: [1, 0, 0], e2: [0, 1, 0], e3: [0, 0, 1], roll: 0, Ln: NECK_REST, env: 0, yaw: 0, pitch: 0, hook: 0, len: 0, swim: 0 };
 const nk = {};
@@ -207,16 +261,52 @@ function behave(t) {
   for (let i = 0; i < 3; i++) C[i] += d[i] * f + e2[i] * (sd + hx) + e3[i] * (hy) + (i === 2 ? up : 0);
   neckAt(t, nk);
   const rest = NECK_REST + (NECK_SWIM - NECK_REST) * swim;
-  B.Ln = rest + (nk.len - rest) * nk.env;
+  B.Ln = nk.Ln >= 0 ? rest + (nk.Ln - NECK_REST) : rest + (nk.len - rest) * nk.env;
+  swallowAt(t, DATA.s_body + B.Ln);
   B.C = C; B.e1 = d; B.e2 = e2; B.e3 = e3; B.roll = roll; B.swim = swim;
   B.env = nk.env; B.yaw = nk.yaw; B.pitch = nk.pitch; B.hook = nk.hook;
   return B;
 }
 
-let cx = new Float32Array(NR), cy = new Float32Array(NR), cz = new Float32Array(NR);
-function updateRings(time) {
-  const b = behave(time), L = DATA.s_body + b.Ln;
-  const { r, theta, ds } = profiles(L, NR);
+// where the prey is in all this, t being the time in the loop and L the cell's length
+function swallowAt(t, L) {
+  const T = MEAL.feed.T, A = PREY.a * 1.08;
+  SW.k = 0; SW.sc = L + A; SW.scale = 1; SW.fold = 0; SW.g = 0;
+  if (t < T[3] || t >= MEAL.tDone) return;              // held at the tip, outside; or long gone
+  if (t < T[4]) {                                       // the mouth passes over it, from its near pole to its far one
+    const u = sstep((t - T[3]) / (T[4] - T[3]));
+    SW.k = 1; SW.sc = L + A - (2 * A + 0.1 * PREY.a) * u; SW.fold = sstep(u / 0.5);
+  } else if (t < T[5]) {                                // down into the body, pressed a little smaller
+    const u = smoother((t - T[4]) / (T[5] - T[4]));
+    SW.scale = SW.k = 1 - 0.2 * u; SW.sc = (L - A - 0.1 * PREY.a) * (1 - u) + FEED.park * u; SW.fold = 1;
+  } else {                                              // digested where it lies, over the rest of the loop
+    const g = (t - T[5]) / (MEAL.tDone - T[5]);
+    SW.scale = SW.k = 0.8 * Math.pow(1 - g, 0.8); SW.sc = FEED.park - 3 * g; SW.fold = 1; SW.g = g;
+  }
+}
+
+let cx = new Float32Array(NR), cy = new Float32Array(NR), cz = new Float32Array(NR), curL = 100;
+// a point on the centreline, s from the tail, with the tangent and a normal there; beyond the tip it carries straight on
+function centre(s, p, T, N) {
+  const f = Math.min(1, Math.max(0, s / curL)) * (NR - 1), i = Math.min(NR - 2, Math.floor(f)), w = f - i, over = Math.max(0, s - curL);
+  for (let k = 0; k < 3; k++) { T[k] = ringData[(2 * NR + i) * 4 + k] * (1 - w) + ringData[(2 * NR + i + 1) * 4 + k] * w; N[k] = ringData[(NR + i) * 4 + k] * (1 - w) + ringData[(NR + i + 1) * 4 + k] * w; }
+  const tl = Math.hypot(T[0], T[1], T[2]) || 1, dn = (N[0] * T[0] + N[1] * T[1] + N[2] * T[2]) / (tl * tl);
+  for (let k = 0; k < 3; k++) { T[k] /= tl; N[k] -= dn * T[k] * tl; }
+  const nl = Math.hypot(N[0], N[1], N[2]) || 1;
+  for (let k = 0; k < 3; k++) { N[k] /= nl; p[k] = ringData[i * 4 + k] * (1 - w) + ringData[(i + 1) * 4 + k] * w + T[k] * over; }
+  return p;
+}
+// how the Lacrymaria has its prey at time t (after updateRings(t)), or null if it has none
+const HELD = { p: [0, 0, 0], T: [1, 0, 0], N: [0, 1, 0], since: 0, scale: 1, fade: 1, fold: 0 };
+function mealPose(t) {
+  if (t < MEAL.b || t >= MEAL.tGone) return null;
+  centre(SW.sc, HELD.p, HELD.T, HELD.N);
+  HELD.since = t - MEAL.b; HELD.scale = SW.scale; HELD.fold = SW.fold; HELD.fade = 1 - sstep((t - (MEAL.feed.T[5] - 1.5)) / 2.5);
+  return HELD;
+}
+// the centreline at a time, as n points into X, Y, Z (not yet moved to where the body is: add the offset returned)
+function spine(time, n, X, Y, Z) {
+  const b = behave(time), L = DATA.s_body + b.Ln, ds = L / (n - 1);
   // The centreline, shaped as in the tracked clip: the neck is a smooth curve with no
   // waves in it. It turns where it leaves the body and is nearly straight beyond that,
   // so it goes out along a line and comes back along itself; the long neck only sways
@@ -225,7 +315,7 @@ function updateRings(time) {
   const yaw = b.yaw + 0.16 * out * NZ.a1(time) + 0.30 * slack * NZ.a2(time), pitch = b.pitch + 0.13 * out * NZ.b1(time) + 0.24 * slack * NZ.b2(time);
   const arcA = 0.0035 * NZ.ha(time), arcB = 0.0028 * NZ.hb(time), hook = b.hook * (0.2 + 0.8 * slack);
   let x = 0, y = 0, z = 0, ref = 0;
-  for (let i = 0; i < NR; i++) {
+  for (let i = 0; i < n; i++) {
     const s = i * ds, sn = Math.max(0, s - s0), turn = 1 - Math.exp(-sn / 16), tip = Math.exp(-(L - s) / 14) * sstep(sn / 12);
     const al = yaw * turn + arcA * sn + hook * tip;
     const be = pitch * turn + arcB * sn;
@@ -233,10 +323,18 @@ function updateRings(time) {
     if (i > 0) {
       x += (b.e1[0] * c1 + b.e2[0] * c2 + b.e3[0] * c3) * ds; y += (b.e1[1] * c1 + b.e2[1] * c2 + b.e3[1] * c3) * ds; z += (b.e1[2] * c1 + b.e2[2] * c2 + b.e3[2] * c3) * ds;
     }
-    cx[i] = x; cy[i] = y; cz[i] = z;
+    X[i] = x; Y[i] = y; Z[i] = z;
     if (s <= S_REF) ref = i;
   }
-  const ox = b.C[0] - cx[ref], oy = b.C[1] - cy[ref], oz = b.C[2] - cz[ref];
+  const f = S_REF / ds - ref;                           // the body's reference point falls between two of them
+  const at = (A) => A[ref] + (A[Math.min(n - 1, ref + 1)] - A[ref]) * f;
+  return { b, L, ds, off: [b.C[0] - at(X), b.C[1] - at(Y), b.C[2] - at(Z)] };
+}
+function updateRings(time) {
+  const { b, L, ds, off } = spine(time, NR, cx, cy, cz);
+  curL = L;
+  const { r, base, theta } = profiles(L, NR);
+  const [ox, oy, oz] = off;
   const sx = smoothArr(cx, 1.5 / ds), sy = smoothArr(cy, 1.5 / ds), sz = smoothArr(cz, 1.5 / ds);
   // the frame is carried along the cell without twisting, starting from the body's roll
   const cr = Math.cos(b.roll), sr = Math.sin(b.roll);
@@ -251,11 +349,11 @@ function updateRings(time) {
     nx -= dn * tx; ny -= dn * ty; nz -= dn * tz;
     const nl = Math.hypot(nx, ny, nz) || 1;
     nx /= nl; ny /= nl; nz /= nl;
-    const rs = Math.max(r[i], 0.4 * DATA.r_neck + 0.05);
+    const rs = Math.max(base[i], 0.4 * DATA.r_neck + 0.05);
     psi -= (Math.tan(theta[i]) / rs) * ds;
     const perp = (2 * Math.PI * rs * Math.cos(theta[i])) / N_PLEATS;
     const ne = L - HEAD_LEN * HS;
-    const depth = Math.min(0.34 * perp, 1.1) * sstep(r[i] / (0.5 * DATA.r_neck)) * (1 - 0.6 * sstep((i * ds - ne) / (4 * HS)));
+    const depth = Math.min(0.34 * perp, 1.1) * sstep(r[i] / (0.5 * DATA.r_neck)) * (1 - 0.6 * sstep((i * ds - ne) / (4 * HS))) * Math.min(1, (base[i] + 0.4) / (r[i] + 0.4));   // stretched skin is smoother
     let o = i * 4;
     ringData[o] = sx[i] + ox; ringData[o + 1] = sy[i] + oy; ringData[o + 2] = sz[i] + oz; ringData[o + 3] = r[i];
     o = (NR + i) * 4;
@@ -1218,6 +1316,52 @@ animal.add(...para.cells);
 const vort = makeVorticella(common, PERIOD, surroundings.userData.flocs);
 animal.add(...vort.cells);
 
+// and a few Halteria hang in the water and jump away from whatever comes near. One of them
+// is not quick enough: worked out here are the places where the Lacrymaria's head will be
+// when it first comes for it (A) and when it gets it (B).
+const tubePaths = surroundings.userData.tubes.map((m) => m.userData.path);
+const segDist = (p, a, b) => {
+  const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
+  const q = Math.min(1, Math.max(0, (ab[0] * ap[0] + ab[1] * ap[1] + ab[2] * ap[2]) / (ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2)));
+  return Math.hypot(ap[0] - q * ab[0], ap[1] - q * ab[1], ap[2] - q * ab[2]);
+};
+const WN = 96, wx = new Float32Array(WN), wy = new Float32Array(WN), wz = new Float32Array(WN);   // the Lacrymaria, coarsely
+const water = {
+  still: (p, r) => surroundings.userData.flocs.every((f) => Math.hypot(p[0] - f[0], p[1] - f[1], p[2] - f[2]) > 0.8 * f[3] + r) && tubePaths.every((u) => segDist(p, u[0], u[1]) > u[2] + r),
+  path: (a, b, r) => { for (let k = 1; k < 8; k++) if (!water.still(a.map((v, i) => v + (b[i] - v) * (k / 8)), 0.5 * r)) return false; return true; },
+  // everything that moves, as balls: x y z r, ...
+  world: (t) => {
+    const out = [];
+    const { L, ds, off } = spine(t, WN, wx, wy, wz);
+    for (let i = 0; i < WN; i++) {
+      const sv = i * ds, r = sv < DATA.s_body ? interp(sv, BODY_S, DATA.r_body) : L - sv < 12 ? 3.5 : DATA.r_neck;
+      out.push(wx[i] + off[0], wy[i] + off[1], wz[i] + off[2], r + 3);
+    }
+    for (const g of para.cells) {
+      const p = g.userData.plan.at(t), L = g.userData.L;
+      for (let k = -3; k <= 3; k++) out.push(p.C[0] + p.d[0] * L * k / 6, p.C[1] + p.d[1] * L * k / 6, p.C[2] + p.d[2] * L * k / 6, L * 0.13 + 3);
+    }
+    desmo.update(t, camera);
+    for (const g of desmo.rafts) out.push(g.position.x, g.position.y, g.position.z, g.userData.radius);
+    for (const sp of vort.cells[0].userData.spots) out.push(sp.p.x, sp.p.y, sp.p.z, sp.r + 4);
+    return out;
+  },
+};
+vort.update(0, 0, camera);
+const mealPlace = (t, beyond) => { updateRings(t); return centre(curL + beyond, [0, 0, 0], [0, 0, 0], [0, 0, 0]); };
+const meal = { tJump: MISS.b - 0.22, tCatch: MEAL.b, tGone: MEAL.tGone, tBack: PERIOD - 11.5, A: mealPlace(MISS.b, PREY.a + 5), B: mealPlace(MEAL.b, PREY.a * 1.08) };
+meal.far = [meal.A[0] - 250, meal.A[1] + 120, meal.A[2] + 30];        // where its successor comes in from, out of the usual view
+const t0 = performance.now();
+const prey = makeHalteria(common, PERIOD, meal, water);
+animal.add(...prey.cells);
+const planMs = performance.now() - t0;
+// what is left of the meal: a food vacuole, red at first, shrinking and browning as it is digested
+const bolus = [
+  makeShell({ s: FEED.park, rho: 0, phi: 0.9, r: 1, edge: [1.0, 0.36, 0.26], core: [0.02, 0.005, 0.004], strength: 0, pow: 2.2 }),
+  makeShell({ s: FEED.park, rho: 0, phi: 0.9, r: 1, edge: [1.0, 0.45, 0.28], core: [0.16, 0.035, 0.025], strength: 0, pow: 1.4 }),
+];
+animal.add(...bolus);
+
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.26, 0.22, 0.15);
@@ -1317,6 +1461,13 @@ function hitTest(x, y) {
     const miss = c.addScaledVector(D, -t).length() - sp.r - Math.max(2, 8 * t * perPx);
     if (miss < best) { best = miss; hit = { kind: 'vorticella', k, i }; }
   }));
+  prey.cells.forEach((g, k) => {                       // the Halteria: a ball each
+    if (!g.visible) return;
+    const c = g.position.clone().sub(O), t = c.dot(D);
+    if (t <= 0) return;
+    const miss = c.addScaledVector(D, -t).length() - g.userData.radius - Math.max(2, 10 * t * perPx);
+    if (miss < best) { best = miss; hit = { kind: 'halteria', k }; }
+  });
   surroundings.userData.tubes.forEach((g) => {         // the green filaments: lying still, so the spot is a fixed one
     const ln = g.userData.line, R = g.userData.path[2];
     for (let i = 0; i < ln.length; i += 3) {
@@ -1334,6 +1485,10 @@ function anchorOf(hit) {
   if (hit.kind === 'oscillatoria') return (v) => v.set(hit.p[0], hit.p[1], hit.p[2]);
   if (hit.kind === 'desmodesmus') return (v) => v.copy(desmo.rafts[hit.k].position);
   if (hit.kind === 'vorticella') return (v) => v.copy(vort.cells[hit.k].userData.spots[hit.i].p);
+  if (hit.kind === 'halteria') return (v) => {          // once it has been swallowed, what is left of it; after that, the one that ate it
+    const g = prey.cells[hit.k];
+    return g.visible ? v.copy(g.position) : state.t < MEAL.tDone && state.t > MEAL.tCatch ? v.fromArray(centre(SW.sc, [0, 0, 0], [0, 0, 0], [0, 0, 0])) : v.fromArray(B.C);
+  };
   if (hit.kind === 'paramecium') return (v) => { const [a, b] = para.cells[hit.k].userData.ends; return v.copy(a).lerp(b, hit.u); };
   const L0 = common.uL.value, s0 = (hit.ring / (NR - 1)) * L0, onBody = s0 <= DATA.s_body, keep = onBody ? s0 : L0 - s0;
   return (v) => {
@@ -1396,6 +1551,18 @@ function tick(now) {
   desmo.update(state.t, camera);
   para.update(state.t, state.clock, camera);
   vort.update(state.t, state.clock, camera);
+  prey.update(state.t, state.clock, camera, mealPose(state.t));
+  {
+    const T5 = MEAL.feed.T[5], on = state.t > T5 - 1.5 && state.t < MEAL.tDone, g = on && state.t > T5 ? SW.g : 0;
+    const show = on ? sstep((state.t - (T5 - 1.5)) / 2.5) * sstep((1 - g) / 0.08) : 0;
+    bolus.forEach((m, i) => {
+      const u = m.material.uniforms;
+      m.visible = show > 0;
+      u.uAnchor.value.set(SW.sc, 0.3 * g, 0.9); u.uRad.value = PREY.b * SW.scale * (i ? 0.62 - 0.2 * g : 0.96);
+      u.uStrength.value = show * (i ? 0.42 : 0.5);
+      u.uEdge.value.setRGB(1.0 - 0.15 * g, (i ? 0.45 : 0.36) + 0.14 * g, 0.26 - 0.06 * g);
+    });
+  }
   VACS.forEach((v, i) => {
     const f = vacFill(v, state.clock);
     vacShells[i].material.uniforms.uRad.value = v.r * (0.3 + 0.7 * Math.cbrt(f));
@@ -1457,4 +1624,14 @@ function lookVort(t, dist, az = -90, el = 40, along = 0) {
   camera.position.set(c.x + dist * Math.cos(el * RAD) * Math.cos(az * RAD), c.y + dist * Math.cos(el * RAD) * Math.sin(az * RAD), c.z + dist * Math.sin(el * RAD));
   return true;
 }
-window.viewer = { lookVort, vort, look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };
+// and for Halteria k (the last one is the one that gets eaten), wherever it is at time t
+function lookPrey(t, k, dist, az = -90, el = 40) {
+  setPlay(false); select(null); state.t = t;
+  updateRings(t); prey.update(t, state.clock, camera, mealPose(t));
+  const c = prey.cells[k].position;
+  controls.target.copy(c); camera.up.set(0, 0, 1);
+  camera.position.set(c.x + dist * Math.cos(el * RAD) * Math.cos(az * RAD), c.y + dist * Math.cos(el * RAD) * Math.sin(az * RAD), c.z + dist * Math.sin(el * RAD));
+  return true;
+}
+stats.planMs = planMs;
+window.viewer = { lookPrey, prey, meal, MEAL, MISS, FEED, SW, water, centre, lookVort, vort, look, lookAlga, lookPara, para, desmo, pick, select, hitTest, follow, detail, state, stats, camera, controls, setPlay, bloom, renderer, composer, surroundings, animal, behave, B, SEGS, BOUTS, updateRings, ringData };

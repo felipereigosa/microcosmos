@@ -11,7 +11,7 @@ export const INFO = {
     tag: 'The "tear of a swan": one cell with a neck it can throw out many times its own length.',
     stats: [['1 cell', 'the whole animal'], ['30×', 'its body length, at full reach'], ['15', 'pleats wound round it']],
     text: [
-      'It stays in one place and casts its neck out again and again, feeling through the debris for smaller cells to eat, then draws it in and swims on. The neck can go from nothing to over a millimetre in seconds, and the cell does this some 20,000 times in its life.',
+      'It stays in one place and casts its neck out again and again, feeling through the debris for smaller cells to eat, then draws it in and swims on. The neck can go from nothing to over a millimetre in seconds, and the cell does this some 20,000 times in its life. When the head touches prey it stings it still, reels it in, and stretches its mouth right over it: watch the red Halteria.',
       'The trick is in its skin. Fifteen pleats wind round the body as a helix, each stiffened by a band of microtubules; the folded surface unspools into the neck like curved origami and folds away again when it comes back.',
     ],
     look: [
@@ -19,10 +19,10 @@ export const INFO = {
       [AMBER, 'Extrusomes', 'rods in the head, fired into prey on contact'],
       [PINK, 'Two macronuclei', 'with the small micronucleus between them'],
       [BLUE, 'Contractile vacuoles', 'fill with water and empty at a stroke'],
-      [GREEN, 'Food vacuoles', 'earlier meals, being digested'],
+      [GREEN, 'Food vacuoles', 'earlier meals, being digested; the big red one is the Halteria it has just swallowed'],
       [ORANGE, 'Mitochondria', 'under the surface, with a basal body at the foot of every cilium'],
     ],
-    model: 'Shape measured from footage by James Weiss (Journey to the Microcosmos); structure after Flaum & Prakash, Science 2024. Behaviour is modelled, not observed, and the organelles are coloured as in a textbook: in life they are colourless.',
+    model: 'Shape measured from footage by James Weiss (Journey to the Microcosmos); structure after Flaum & Prakash, Science 2024. Behaviour is modelled, not observed, except the meal, which follows a hunt in that footage at about twice its pace; the organelles are coloured as in a textbook: in life they are colourless.',
   },
   desmodesmus: {
     accent: '#a5dc6e',
@@ -82,6 +82,26 @@ export const INFO = {
       [ORANGE, 'Mitochondria', 'and a few Golgi stacks deeper in'],
     ],
     model: 'After Brette, eNeuro 2021, and videos by Alexander Klepnev (Wikimedia Commons, CC BY 4.0). Behaviour is modelled, not observed; the food vacuoles travel far faster than in life.',
+  },
+  halteria: {
+    accent: '#ff9a85',
+    kind: 'Ciliate · jumper',
+    name: 'Halteria',
+    tag: 'A small globe that hangs in the water, and is suddenly somewhere else.',
+    stats: [['15–35 µm', 'across'], ['7–10', 'rows of jumping bristles'], ['15 + 7', 'membranelles, round the front and in the mouth']],
+    text: [
+      'It hovers almost still, turning slowly, while a collar of membranelles, plates of fused cilia, fans bacteria and small algae into its mouth. It is one of the commonest grazers of bacteria in ponds and lakes.',
+      'Round its middle stand long stiff bristles. At a touch, or a sudden current, they all strike at once and the cell shoots off backwards, many times faster than it swims: often enough to slip a hunter. Not always. One of the five here is caught by the Lacrymaria each time round, and another drifts in to take its place.',
+    ],
+    look: [
+      ['#ff8a70', 'Bristles', 'in groups round the equator: still at rest, swung back together in a jump'],
+      ['#ffb09a', 'Collar of membranelles', 'beating in a wave round the front, with a smaller row leading into the mouth'],
+      [PINK, 'Macronucleus', 'oblong, with the round micronucleus beside it'],
+      [BLUE, 'Contractile vacuole', 'half way along, beside the mouth'],
+      [GREEN, 'Food vacuoles', 'and, close up, small round mitochondria under the surface'],
+      [AMBER, 'Stings', 'on the one that is caught: the threads the Lacrymaria has driven into it'],
+    ],
+    model: 'Proportions as usually given for Halteria grandinella; the catch after footage by James Weiss (Journey to the Microcosmos). Coloured red to tell it apart: in life it is colourless. The length and speed of the jump are estimates.',
   },
   oscillatoria: {
     accent: '#6fd08a',
